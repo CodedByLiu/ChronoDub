@@ -10,6 +10,12 @@ ChronoDub 是一个桌面应用（Electron + React + TypeScript），用于根�
 
 它使用 DeepSeek 翻译字幕，使用 Edge TTS 合成中文语音，并通过 FFmpeg 将配音音轨封装回原视频。
 
+## 界面预览
+
+<p align="left">
+  <img src="./docs/image.png" alt="ChronoDub 界面截图" width="960" />
+</p>
+
 ## 功能特性
 
 - 支持批量导入视频。

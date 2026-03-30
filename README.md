@@ -10,6 +10,12 @@ ChronoDub is a desktop app (Electron + React + TypeScript) for generating Chines
 
 It translates subtitle cues with DeepSeek, synthesizes speech with Edge TTS, and muxes the dubbed audio back into the source video via FFmpeg.
 
+## Interface Preview
+
+<p align="left">
+  <img src="./docs/image.png" alt="ChronoDub UI Screenshot" width="960" />
+</p>
+
 ## Features
 
 - Import one or more videos in batch.
