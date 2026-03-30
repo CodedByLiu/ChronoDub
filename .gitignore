@@ -1,0 +1,13 @@
+node_modules/
+out/
+dist/
+dist-electron/
+
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.temp
+
+.cursor/
+*.local
