@@ -18,6 +18,7 @@ import {
   type FallbackContext,
 } from './audio-processor'
 import { tmpdir } from 'os'
+import { loadTaskSnapshots } from '../task-store'
 
 // ─── Task state management ──────────────────────
 
@@ -165,20 +166,27 @@ export function pauseTask(taskId: string): void {
   reportProgress(taskId, 'paused', last?.progress ?? 0)
 }
 
-export function resumeTask(taskId: string): void {
+export function resumeTask(taskId: string, config?: AppConfig): void {
   const state = activeTasks.get(taskId)
-  if (!state) return
-  state.paused = false
-  if (state.pauseResolver) {
-    state.pauseResolver()
-    state.pauseResolver = null
+  if (state) {
+    state.paused = false
+    if (state.pauseResolver) {
+      state.pauseResolver()
+      state.pauseResolver = null
+    }
+    const last = lastWorkStatus.get(taskId)
+    if (last) {
+      reportProgress(taskId, last.status, last.progress)
+    } else {
+      reportProgress(taskId, 'synthesizing', 55)
+    }
+    return
   }
-  const last = lastWorkStatus.get(taskId)
-  if (last) {
-    reportProgress(taskId, last.status, last.progress)
-  } else {
-    reportProgress(taskId, 'synthesizing', 55)
-  }
+
+  if (!config) return
+  const task = loadTaskSnapshots().find((t) => t.id === taskId)
+  if (!task?.subtitlePath) return
+  runPipeline(taskId, task.videoPath, task.subtitlePath, config)
 }
 
 export function cancelAllTasks(taskIds: string[]): void {
@@ -204,6 +212,13 @@ export function cancelTask(taskId: string): void {
   if (state.pauseResolver) {
     state.pauseResolver()
     state.pauseResolver = null
+  }
+}
+
+export function pauseAllActiveTasks(): void {
+  for (const [taskId, state] of activeTasks) {
+    if (state.cancelled || state.paused) continue
+    pauseTask(taskId)
   }
 }
 
@@ -272,7 +287,7 @@ export async function runPipeline(
       async () => {
         await checkPaused(taskId)
         checkCancelled(taskId)
-      },
+      }
     )
     checkCancelled(taskId)
     await checkPaused(taskId)
@@ -401,10 +416,15 @@ export async function runPipeline(
   }
 }
 
-export function startTasks(taskIds: string[], tasks: Array<{ videoPath: string; subtitlePath: string | null }>, config: AppConfig): void {
+export function startTasks(
+  taskIds: string[],
+  tasks: Array<{ videoPath: string; subtitlePath: string | null }>,
+  config: AppConfig
+): void {
   for (let i = 0; i < taskIds.length; i++) {
     const taskId = taskIds[i]
     const task = tasks[i]
+    if (activeTasks.has(taskId)) continue
     if (!task?.subtitlePath) {
       reportProgress(taskId, 'error', 0)
       sendToRenderer('task:error', taskId, '未关联字幕文件')

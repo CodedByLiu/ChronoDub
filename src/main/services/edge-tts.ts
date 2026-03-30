@@ -8,7 +8,8 @@ import pLimit from 'p-limit'
 const TTS_CONCURRENCY = 2
 const MAX_RETRIES = 3
 const INITIAL_BACKOFF_MS = 1000
-const VOICES_API = 'https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4'
+const VOICES_API =
+  'https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4'
 
 const pLimitCompat = ((pLimit as any).default ?? pLimit) as typeof pLimit
 const limit = pLimitCompat(TTS_CONCURRENCY)
@@ -111,7 +112,9 @@ async function synthesizeWithRetry(
       const backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt)
       await new Promise((r) => setTimeout(r, backoff))
     } finally {
-      try { if (existsSync(tmpPath)) unlinkSync(tmpPath) } catch {}
+      try {
+        if (existsSync(tmpPath)) unlinkSync(tmpPath)
+      } catch {}
     }
   }
 

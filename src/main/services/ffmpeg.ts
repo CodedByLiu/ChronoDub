@@ -41,13 +41,7 @@ export function ffprobe(filePath: string): Promise<ProbeResult> {
   return new Promise((resolve, reject) => {
     execFile(
       getFFprobePath(),
-      [
-        '-v', 'quiet',
-        '-print_format', 'json',
-        '-show_format',
-        '-show_streams',
-        filePath,
-      ],
+      ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', filePath],
       { maxBuffer: 10 * 1024 * 1024 },
       (err, stdout) => {
         if (err) return reject(new Error(`ffprobe 失败: ${err.message}`))
@@ -72,13 +66,11 @@ export function ffprobe(filePath: string): Promise<ProbeResult> {
 
 export function decodeMp3ToPcm(mp3Buffer: Buffer, sampleRate = 48000): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(getFFmpegPath(), [
-      '-i', 'pipe:0',
-      '-f', 's16le',
-      '-ar', String(sampleRate),
-      '-ac', '1',
-      'pipe:1',
-    ], { stdio: ['pipe', 'pipe', 'pipe'] })
+    const proc = spawn(
+      getFFmpegPath(),
+      ['-i', 'pipe:0', '-f', 's16le', '-ar', String(sampleRate), '-ac', '1', 'pipe:1'],
+      { stdio: ['pipe', 'pipe', 'pipe'] }
+    )
 
     const chunks: Buffer[] = []
     proc.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
@@ -100,11 +92,7 @@ export function trimSilence(
   thresholdDb = -40,
   minDurationMs = 60
 ): Buffer {
-  const samples = new Int16Array(
-    pcmBuffer.buffer,
-    pcmBuffer.byteOffset,
-    pcmBuffer.byteLength / 2
-  )
+  const samples = new Int16Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.byteLength / 2)
   const totalSamples = samples.length
   if (totalSamples === 0) return pcmBuffer
 
@@ -178,13 +166,20 @@ export function muxVideoWithAudio(
   return new Promise((resolve, reject) => {
     const args = [
       '-y',
-      '-i', videoPath,
-      '-i', audioPath,
-      '-c:v', 'copy',
-      '-c:a', 'aac',
-      '-b:a', '192k',
-      '-map', '0:v:0',
-      '-map', '1:a:0',
+      '-i',
+      videoPath,
+      '-i',
+      audioPath,
+      '-c:v',
+      'copy',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
       '-shortest',
       outputPath,
     ]
@@ -204,17 +199,30 @@ export function muxVideoWithAudio(
   })
 }
 
-export function writePcmToWav(pcmBuffer: Buffer, outputPath: string, sampleRate = 48000): Promise<void> {
+export function writePcmToWav(
+  pcmBuffer: Buffer,
+  outputPath: string,
+  sampleRate = 48000
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(getFFmpegPath(), [
-      '-y',
-      '-f', 's16le',
-      '-ar', String(sampleRate),
-      '-ac', '1',
-      '-i', 'pipe:0',
-      '-c:a', 'pcm_s16le',
-      outputPath,
-    ], { stdio: ['pipe', 'pipe', 'pipe'] })
+    const proc = spawn(
+      getFFmpegPath(),
+      [
+        '-y',
+        '-f',
+        's16le',
+        '-ar',
+        String(sampleRate),
+        '-ac',
+        '1',
+        '-i',
+        'pipe:0',
+        '-c:a',
+        'pcm_s16le',
+        outputPath,
+      ],
+      { stdio: ['pipe', 'pipe', 'pipe'] }
+    )
 
     proc.on('close', (code) => {
       if (code !== 0) return reject(new Error(`FFmpeg WAV 写入失败 (${code})`))

@@ -71,8 +71,7 @@ export function buildTimeWindows(
 
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i]
-    const nextStart =
-      i < segments.length - 1 ? segments[i + 1].startUs : videoDurationUs
+    const nextStart = i < segments.length - 1 ? segments[i + 1].startUs : videoDurationUs
 
     const hardDeadline = nextStart - SAFETY_GAP_US
     const deadline = Math.max(hardDeadline, seg.startUs + SAFETY_GAP_US)
@@ -176,17 +175,10 @@ export function assembleTrack(
     }
 
     if (seg.pcm.byteLength > 0) {
-      const samples = new Int16Array(
-        seg.pcm.buffer,
-        seg.pcm.byteOffset,
-        seg.pcm.byteLength / 2
-      )
+      const samples = new Int16Array(seg.pcm.buffer, seg.pcm.byteOffset, seg.pcm.byteLength / 2)
       applyFadeInOut(samples, FADE_SAMPLES)
 
-      const bytesToWrite = Math.min(
-        seg.pcm.byteLength,
-        (totalSamples - cursor) * 2
-      )
+      const bytesToWrite = Math.min(seg.pcm.byteLength, (totalSamples - cursor) * 2)
       if (bytesToWrite > 0) {
         seg.pcm.copy(output, cursor * 2, 0, bytesToWrite)
         cursor += bytesToWrite / 2
@@ -222,9 +214,7 @@ export interface FallbackContext {
   windows: TimeWindow[]
 }
 
-export async function synthesizeWithFallback(
-  ctx: FallbackContext
-): Promise<ProcessedAudio> {
+export async function synthesizeWithFallback(ctx: FallbackContext): Promise<ProcessedAudio> {
   let currentText = ctx.text
   const windowSec = ctx.windowUs / 1_000_000
 
@@ -240,17 +230,10 @@ export async function synthesizeWithFallback(
 
     // Level 1: 语义压缩重译
     if (round === 0) {
-      const targetChars = Math.max(
-        2,
-        Math.floor(currentText.length / overRatio * 0.85)
-      )
+      const targetChars = Math.max(2, Math.floor((currentText.length / overRatio) * 0.85))
       let compressed = currentText
       for (let retry = 0; retry < MAX_RETRIES_PER_LEVEL; retry++) {
-        compressed = await compressTranslation(
-          currentText,
-          targetChars - retry,
-          ctx.apiKey
-        )
+        compressed = await compressTranslation(currentText, targetChars - retry, ctx.apiKey)
         const mp3c = await synthesize(compressed, ctx.voice)
         const rc = await processAudio(mp3c)
         if (rc.durationUs <= ctx.windowUs) return rc
@@ -275,10 +258,7 @@ export async function synthesizeWithFallback(
   return result.durationUs <= ctx.windowUs ? result : hardClip(result, ctx.windowUs)
 }
 
-function trySplitToAdjacentWindows(
-  ctx: FallbackContext,
-  text: string
-): ProcessedAudio | null {
+function trySplitToAdjacentWindows(ctx: FallbackContext, text: string): ProcessedAudio | null {
   const splitPoints = /([，。；、！？,;!?])/
   const parts = text.split(splitPoints).filter(Boolean)
   if (parts.length < 2) return null
@@ -308,11 +288,7 @@ function hardClip(audio: ProcessedAudio, windowUs: MicrosecondTimestamp): Proces
   const clipped = Buffer.alloc(maxBytes)
   audio.pcm.copy(clipped, 0, 0, maxBytes)
 
-  const samples = new Int16Array(
-    clipped.buffer,
-    clipped.byteOffset,
-    clipped.byteLength / 2
-  )
+  const samples = new Int16Array(clipped.buffer, clipped.byteOffset, clipped.byteLength / 2)
 
   const fadeOut = Math.min(FADE_SAMPLES * 3, Math.floor(samples.length / 4))
   for (let i = 0; i < fadeOut; i++) {

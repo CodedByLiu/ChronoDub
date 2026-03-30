@@ -6,21 +6,8 @@ import { Label } from './ui/label'
 import { Separator } from './ui/separator'
 import { ScrollArea } from './ui/scroll-area'
 import { RadioGroup, RadioGroupItem } from './ui/radio-group'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from './ui/table'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 import {
   Plus,
   Trash2,
@@ -161,8 +148,8 @@ export function ConfigPanel() {
   }, [config.deepseekKey, deepseekKeyTesting])
 
   return (
-    <div className="w-[360px] h-full border-r flex flex-col bg-sidebar">
-      <div className="flex items-center justify-between px-4 h-14 border-b shrink-0">
+    <div className="w-[360px] h-full flex flex-col border-r border-border bg-sidebar">
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
         <h2 className="font-semibold text-lg">配置</h2>
         <Button variant="ghost" size="icon-sm" onClick={toggleSidebar}>
           <PanelLeftClose className="size-4" />
@@ -173,8 +160,8 @@ export function ConfigPanel() {
         <div className="p-4 space-y-6">
           <div className="space-y-2">
             <Label>DeepSeek API Key</Label>
-            <div className="flex gap-2 items-start">
-              <div className="relative flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <div className="relative min-w-0 flex-1">
                 <Input
                   type={showDeepseekKey ? 'text' : 'password'}
                   placeholder="sk-..."
@@ -195,11 +182,7 @@ export function ConfigPanel() {
                       onClick={() => setShowDeepseekKey((v) => !v)}
                       aria-label={showDeepseekKey ? '隐藏密钥' : '显示密钥'}
                     >
-                      {showDeepseekKey ? (
-                        <EyeOff className="size-4" />
-                      ) : (
-                        <Eye className="size-4" />
-                      )}
+                      {showDeepseekKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">
@@ -210,8 +193,8 @@ export function ConfigPanel() {
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
-                className="shrink-0"
+                size="default"
+                className="shrink-0 px-3"
                 disabled={!config.deepseekKey.trim() || deepseekKeyTesting}
                 onClick={handleTestDeepseekKey}
               >
@@ -261,23 +244,29 @@ export function ConfigPanel() {
                 </TableBody>
               </Table>
             )}
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <Input
-                placeholder="English"
+                placeholder="英文"
                 value={newEn}
                 onChange={(e) => setNewEn(e.target.value)}
-                className="flex-1"
+                className="min-w-0 flex-1"
                 onKeyDown={(e) => e.key === 'Enter' && handleAddDict()}
               />
               <Input
                 placeholder="中文"
                 value={newZh}
                 onChange={(e) => setNewZh(e.target.value)}
-                className="flex-1"
+                className="min-w-0 flex-1"
                 onKeyDown={(e) => e.key === 'Enter' && handleAddDict()}
               />
-              <Button variant="outline" size="sm" onClick={handleAddDict}>
-                <Plus className="size-3" />
+              <Button
+                variant="outline"
+                size="icon"
+                className="shrink-0"
+                onClick={handleAddDict}
+                aria-label="添加术语"
+              >
+                <Plus className="size-4" />
               </Button>
             </div>
           </div>
@@ -286,65 +275,81 @@ export function ConfigPanel() {
 
           <div className="space-y-2">
             <Label>Edge TTS 声音</Label>
-            <div className="flex gap-2">
-              <Select
-                value={config.selectedVoice}
-                onValueChange={(v) => setConfig({ selectedVoice: v })}
-              >
-                <SelectTrigger className="w-full flex-1">
-                  <SelectValue placeholder="选择声音...">
-                    {config.selectedVoice && (() => {
-                      const v = voices.find((x) => x.name === config.selectedVoice)
-                      const cnName = VOICE_CN_NAMES[config.selectedVoice]
-                      const isFemale = v?.gender === 'Female'
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <Select
+                  value={config.selectedVoice}
+                  onValueChange={(v) => setConfig({ selectedVoice: v })}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="选择声音...">
+                      {config.selectedVoice &&
+                        (() => {
+                          const v = voices.find((x) => x.name === config.selectedVoice)
+                          const cnName = VOICE_CN_NAMES[config.selectedVoice]
+                          const isFemale = v?.gender === 'Female'
+                          return (
+                            <span className="flex items-center gap-1.5">
+                              {isFemale ? (
+                                <Venus
+                                  className="size-3.5 shrink-0 text-muted-foreground"
+                                  aria-hidden
+                                />
+                              ) : (
+                                <Mars
+                                  className="size-3.5 shrink-0 text-muted-foreground"
+                                  aria-hidden
+                                />
+                              )}
+                              <span>{cnName || config.selectedVoice}</span>
+                            </span>
+                          )
+                        })()}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {voices.map((v) => {
+                      const cnName = VOICE_CN_NAMES[v.name]
+                      const isFemale = v.gender === 'Female'
                       return (
-                        <span className="flex items-center gap-1.5">
-                          {isFemale ? (
-                            <Venus className="size-3.5 shrink-0 text-pink-500" aria-hidden />
-                          ) : (
-                            <Mars className="size-3.5 shrink-0 text-blue-500" aria-hidden />
-                          )}
-                          <span>{cnName || config.selectedVoice}</span>
-                        </span>
+                        <SelectItem key={v.name} value={v.name}>
+                          <span className="flex items-center gap-1.5">
+                            {isFemale ? (
+                              <Venus
+                                className="size-3.5 shrink-0 text-muted-foreground"
+                                aria-hidden
+                              />
+                            ) : (
+                              <Mars
+                                className="size-3.5 shrink-0 text-muted-foreground"
+                                aria-hidden
+                              />
+                            )}
+                            <span>{cnName || v.name}</span>
+                            {cnName && (
+                              <span className="text-muted-foreground text-xs">
+                                {v.name.replace('zh-CN-', '').replace('Neural', '')}
+                              </span>
+                            )}
+                          </span>
+                        </SelectItem>
                       )
-                    })()}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {voices.map((v) => {
-                    const cnName = VOICE_CN_NAMES[v.name]
-                    const isFemale = v.gender === 'Female'
-                    return (
-                      <SelectItem key={v.name} value={v.name}>
-                        <span className="flex items-center gap-1.5">
-                          {isFemale ? (
-                            <Venus className="size-3.5 shrink-0 text-pink-500" aria-hidden />
-                          ) : (
-                            <Mars className="size-3.5 shrink-0 text-blue-500" aria-hidden />
-                          )}
-                          <span>{cnName || v.name}</span>
-                          {cnName && (
-                            <span className="text-muted-foreground text-xs">{v.name.replace('zh-CN-', '').replace('Neural', '')}</span>
-                          )}
-                        </span>
-                      </SelectItem>
-                    )
-                  })}
-                </SelectContent>
-              </Select>
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
               <Button
                 variant="outline"
-                size="sm"
+                size="default"
+                className="shrink-0 px-3"
                 onClick={handleTestVoice}
                 disabled={!config.selectedVoice || testing}
               >
-                <Volume2 className="size-3" />
+                <Volume2 className="size-3.5" />
                 {testing ? '播放中...' : '试听'}
               </Button>
             </div>
-            {testError && (
-              <p className="text-xs text-red-500">{testError}</p>
-            )}
+            {testError && <p className="text-xs text-red-400">{testError}</p>}
           </div>
 
           <Separator />

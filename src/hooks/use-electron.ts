@@ -2,8 +2,7 @@ import { useEffect } from 'react'
 import { useAppStore } from '../stores/app-store'
 
 export function useIpcListeners() {
-  const { updateTaskStatus, updateTaskCountdown, updateTaskCues, updateTaskError } =
-    useAppStore()
+  const { updateTaskStatus, updateTaskCountdown, updateTaskCues, updateTaskError } = useAppStore()
 
   useEffect(() => {
     const unsubProgress = window.api?.task.onProgress((taskId, status, progress) => {
@@ -14,12 +13,10 @@ export function useIpcListeners() {
       updateTaskCountdown(taskId, remaining)
     })
 
-    const unsubReviewReady = window.api?.task.onReviewReady(
-      (taskId, englishCues, chineseCues) => {
-        updateTaskCues(taskId, englishCues, chineseCues)
-        updateTaskStatus(taskId, 'reviewing')
-      }
-    )
+    const unsubReviewReady = window.api?.task.onReviewReady((taskId, englishCues, chineseCues) => {
+      updateTaskCues(taskId, englishCues, chineseCues)
+      updateTaskStatus(taskId, 'reviewing')
+    })
 
     const unsubError = window.api?.task.onError((taskId, message) => {
       updateTaskError(taskId, message)

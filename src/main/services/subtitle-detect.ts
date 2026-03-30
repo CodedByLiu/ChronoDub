@@ -9,7 +9,10 @@ const SUBTITLE_EXT = /\.(srt|vtt|ass)$/i
 
 /** 去掉课程编号前缀 "1. "、"12. "，便于与带编号字幕对齐 */
 function normalizeLessonKey(s: string): string {
-  return s.replace(/^\d+\.\s*/, '').trim().toLowerCase()
+  return s
+    .replace(/^\d+\.\s*/, '')
+    .trim()
+    .toLowerCase()
 }
 
 /** 去掉 .en / .zh-CN 等语言后缀（在 .srt 之前那一节） */
@@ -30,10 +33,7 @@ export function detectSubtitleForVideo(videoPath: string): string | null {
     if (existsSync(exact)) return exact
   }
 
-  const pattern = new RegExp(
-    `^${escapeRegex(stem)}(\\.[a-zA-Z0-9_-]+)?\\.(srt|vtt|ass)$`,
-    'i'
-  )
+  const pattern = new RegExp(`^${escapeRegex(stem)}(\\.[a-zA-Z0-9_-]+)?\\.(srt|vtt|ass)$`, 'i')
 
   let names: string[]
   try {

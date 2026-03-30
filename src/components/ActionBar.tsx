@@ -26,8 +26,7 @@ export function ActionBar() {
     for (const videoPath of filePaths) {
       if (tasks.some((t) => t.videoPath === videoPath)) continue
       const videoName = videoPath.split(/[\\/]/).pop() || videoPath
-      const subtitlePath =
-        (await window.api?.subtitle?.detect?.(videoPath)) || null
+      const subtitlePath = (await window.api?.subtitle?.detect?.(videoPath)) || null
       newTasks.push({
         id: crypto.randomUUID(),
         videoPath,
@@ -67,7 +66,7 @@ export function ActionBar() {
   }
 
   return (
-    <div className="flex items-center gap-2 px-4 h-14 border-b shrink-0">
+    <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-4">
       {!sidebarOpen && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -91,12 +90,7 @@ export function ActionBar() {
 
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleClear}
-            disabled={tasks.length === 0}
-          >
+          <Button variant="outline" size="sm" onClick={handleClear} disabled={tasks.length === 0}>
             <Trash2 className="size-4" />
             清空
           </Button>
@@ -121,11 +115,7 @@ export function ActionBar() {
 
       <div className="flex-1" />
 
-      <Button
-        size="sm"
-        onClick={handleStart}
-        disabled={!tasks.some((t) => t.status === 'waiting')}
-      >
+      <Button size="sm" onClick={handleStart} disabled={!tasks.some((t) => t.status === 'waiting')}>
         <Play className="size-4" />
         开始处理
       </Button>

@@ -4,6 +4,7 @@ import { loadConfig, saveConfig } from './config-store'
 import { parseSubtitleFile, saveSubtitleFile } from './services/subtitle-parser'
 import { detectSubtitleForVideo } from './services/subtitle-detect'
 import { getChineseVoices, synthesizeToBuffer } from './services/edge-tts'
+import { loadTaskSnapshots, normalizeInterruptedTasks, saveTaskSnapshots } from './task-store'
 import {
   startTasks,
   pauseTask,
@@ -13,7 +14,7 @@ import {
   saveReviewCues,
   confirmReview,
 } from './services/pipeline'
-import type { AppConfig, Cue, TaskStartInfo } from '../types'
+import type { AppConfig, Cue, TaskStartInfo, VideoTask } from '../types'
 
 const INVOKE_CHANNELS = [
   'config:load',
@@ -26,6 +27,8 @@ const INVOKE_CHANNELS = [
   'tts:test-voice',
   'subtitle:parse',
   'subtitle:save',
+  'task:load-snapshot',
+  'task:save-snapshot',
 ] as const
 
 function removeInvokeHandlers(): void {
@@ -52,16 +55,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('dialog:open-videos', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],
-      filters: [
-        { name: '视频文件', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm', 'flv'] }
-      ]
+      filters: [{ name: '视频文件', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm', 'flv'] }],
     })
     return result.canceled ? [] : result.filePaths
   })
 
   ipcMain.handle('dialog:open-output', async () => {
     const result = await dialog.showOpenDialog({
-      properties: ['openDirectory', 'createDirectory']
+      properties: ['openDirectory', 'createDirectory'],
     })
     return result.canceled ? null : result.filePaths[0]
   })
@@ -111,6 +112,25 @@ export function registerIpcHandlers(): void {
     saveSubtitleFile(filePath, cues)
   })
 
+  ipcMain.handle('task:load-snapshot', async () => {
+    const tasks = loadTaskSnapshots()
+    const normalized = normalizeInterruptedTasks(tasks)
+    if (normalized.length !== tasks.length) {
+      saveTaskSnapshots(normalized)
+      return normalized
+    }
+    const statusChanged = normalized.some((task, i) => task.status !== tasks[i]?.status)
+    if (statusChanged) {
+      saveTaskSnapshots(normalized)
+    }
+    return normalized
+  })
+
+  ipcMain.handle('task:save-snapshot', async (_event, tasks: VideoTask[]) => {
+    if (!Array.isArray(tasks)) return
+    saveTaskSnapshots(tasks)
+  })
+
   ipcMain.on('task:start', (_event, taskInfos: TaskStartInfo[]) => {
     const config = loadConfig()
     const taskIds = taskInfos.map((t) => t.id)
@@ -142,7 +162,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.on('task:resume', (_event, taskId: string) => {
-    resumeTask(taskId)
+    resumeTask(taskId, loadConfig())
   })
 }
 

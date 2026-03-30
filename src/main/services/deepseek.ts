@@ -144,9 +144,8 @@ ${dictText}
 4. 仅输出 JSON：{"translations": [{"id": <number>, "text": "<中文>"}]}`
 
   const userPrompt =
-    (dictLines.length > 0
-      ? `术语表必须遵守（见 system）。\n待译条目：\n`
-      : '') + JSON.stringify(cueItems)
+    (dictLines.length > 0 ? `术语表必须遵守（见 system）。\n待译条目：\n` : '') +
+    JSON.stringify(cueItems)
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {

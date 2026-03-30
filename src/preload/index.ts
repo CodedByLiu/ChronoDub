@@ -7,10 +7,10 @@ const api: IpcApi = {
   filePathFromDragFile: (file) => webUtils.getPathForFile(file),
   config: {
     load: () => ipcRenderer.invoke('config:load'),
-    save: (config) => ipcRenderer.invoke('config:save', config)
+    save: (config) => ipcRenderer.invoke('config:save', config),
   },
   deepseek: {
-    testKey: (apiKey) => ipcRenderer.invoke('deepseek:test-key', apiKey)
+    testKey: (apiKey) => ipcRenderer.invoke('deepseek:test-key', apiKey),
   },
   dialog: {
     openVideos: () => ipcRenderer.invoke('dialog:open-videos'),
@@ -20,7 +20,7 @@ const api: IpcApi = {
   },
   tts: {
     getVoices: () => ipcRenderer.invoke('tts:get-voices'),
-    testVoice: (voice) => ipcRenderer.invoke('tts:test-voice', voice)
+    testVoice: (voice) => ipcRenderer.invoke('tts:test-voice', voice),
   },
   subtitle: {
     parse: (filePath) => ipcRenderer.invoke('subtitle:parse', filePath),
@@ -29,6 +29,8 @@ const api: IpcApi = {
     pathFromFile: (file) => webUtils.getPathForFile(file),
   },
   task: {
+    loadSnapshot: () => ipcRenderer.invoke('task:load-snapshot'),
+    saveSnapshot: (tasks) => ipcRenderer.invoke('task:save-snapshot', tasks),
     start: (tasks) => ipcRenderer.send('task:start', tasks),
     pause: (taskId) => ipcRenderer.send('task:pause', taskId),
     resume: (taskId) => ipcRenderer.send('task:resume', taskId),
@@ -47,11 +49,8 @@ const api: IpcApi = {
       return () => ipcRenderer.removeListener('task:progress', handler)
     },
     onReviewCountdown: (callback) => {
-      const handler = (
-        _event: Electron.IpcRendererEvent,
-        taskId: string,
-        remaining: number
-      ) => callback(taskId, remaining)
+      const handler = (_event: Electron.IpcRendererEvent, taskId: string, remaining: number) =>
+        callback(taskId, remaining)
       ipcRenderer.on('task:review-countdown', handler)
       return () => ipcRenderer.removeListener('task:review-countdown', handler)
     },
@@ -66,15 +65,12 @@ const api: IpcApi = {
       return () => ipcRenderer.removeListener('task:review-ready', handler)
     },
     onError: (callback) => {
-      const handler = (
-        _event: Electron.IpcRendererEvent,
-        taskId: string,
-        message: string
-      ) => callback(taskId, message)
+      const handler = (_event: Electron.IpcRendererEvent, taskId: string, message: string) =>
+        callback(taskId, message)
       ipcRenderer.on('task:error', handler)
       return () => ipcRenderer.removeListener('task:error', handler)
-    }
-  }
+    },
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -1,0 +1,9 @@
+node_modules
+out
+release
+build
+dist
+dist-electron
+
+package-lock.json
+pnpm-lock.yaml

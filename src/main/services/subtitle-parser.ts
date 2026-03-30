@@ -115,10 +115,7 @@ function parseAssTimestamp(ts: string): number {
   const match = ts.match(/^(\d+):(\d{2}):(\d{2})\.(\d{2})$/)
   if (!match) return 0
   const [, h, m, s, cs] = match
-  return (
-    (parseInt(h) * 3600 + parseInt(m) * 60 + parseInt(s)) * 1_000_000 +
-    parseInt(cs) * 10_000
-  )
+  return (parseInt(h) * 3600 + parseInt(m) * 60 + parseInt(s)) * 1_000_000 + parseInt(cs) * 10_000
 }
 
 export function cuesToSrt(cues: Cue[]): string {

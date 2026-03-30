@@ -129,9 +129,9 @@ flowchart TD
 
 测时长的工程实现建议：
 
-1) 让 Edge TTS 输出 MP3（默认配置中明确 `outputFormat:"audio-24khz-48kbitrate-mono-mp3"`）。 citeturn21view3turn20view0  
-2) 用解码库（如 Rust `symphonia`）解码为 PCM，获取样本数 `N` 与采样率 `sr`，时长 `D = N / sr`。`symphonia` 文档说明其解码流程：从 `FormatReader` 取 `packet`，喂给 `Decoder` 返回 `AudioBufferRef`。 citeturn10search1turn10search5  
-3) 由于后续要拼接，建议统一到目标采样率（常用 48 kHz，便于与多数视频音频一致）与固定声道数（1 或 2）。重采样可用 `rubato`（其文档强调重采样器创建昂贵、应复用并可 `reset()`）。 citeturn10search0turn10search12  
+1. 让 Edge TTS 输出 MP3（默认配置中明确 `outputFormat:"audio-24khz-48kbitrate-mono-mp3"`）。 citeturn21view3turn20view0
+2. 用解码库（如 Rust `symphonia`）解码为 PCM，获取样本数 `N` 与采样率 `sr`，时长 `D = N / sr`。`symphonia` 文档说明其解码流程：从 `FormatReader` 取 `packet`，喂给 `Decoder` 返回 `AudioBufferRef`。 citeturn10search1turn10search5
+3. 由于后续要拼接，建议统一到目标采样率（常用 48 kHz，便于与多数视频音频一致）与固定声道数（1 或 2）。重采样可用 `rubato`（其文档强调重采样器创建昂贵、应复用并可 `reset()`）。 citeturn10search0turn10search12
 
 停顿调整（静音填充）规则：
 
@@ -144,7 +144,7 @@ flowchart TD
 去首尾静音建议做（提升落窗概率与听感）：
 
 - 简单能量阈值法：以 10–20 ms frame 计算 RMS，低于阈值持续 X 帧视为静音。
-- 更稳健可用 WebRTC VAD。Rust `webrtc_vad` crate 提供安全 API，并基于 libfvad/WebRTC VAD。 citeturn9search0turn9search5  
+- 更稳健可用 WebRTC VAD。Rust `webrtc_vad` crate 提供安全 API，并基于 libfvad/WebRTC VAD。 citeturn9search0turn9search5
 
 ### 避免音频重叠与无缝拼接算法
 
@@ -160,9 +160,9 @@ flowchart TD
 - 将 TTS PCM（已重采样/转声道/去首尾静音）得到 `audio_samples`，长度 `len_audio`。
 - 若 `len_audio > window_samples`：触发回退（不在此处硬裁）。
 - 写入流程：
-  1) 若当前写指针 `cursor < start_sample`：写入 `start_sample-cursor` 静音。
-  2) 对 `audio_samples` 做淡入淡出（防爆音），再写入。
-  3) 若 `cursor_after_audio < deadline_sample`：补静音直到 deadline。
+  1. 若当前写指针 `cursor < start_sample`：写入 `start_sample-cursor` 静音。
+  2. 对 `audio_samples` 做淡入淡出（防爆音），再写入。
+  3. 若 `cursor_after_audio < deadline_sample`：补静音直到 deadline。
 
 淡入淡出（fade in/out）：
 
@@ -171,7 +171,7 @@ flowchart TD
 
 缓冲与流式处理：
 
-- 大视频不宜把整条 PCM 留在内存。建议边生成边写 WAV：Rust `hound` 提供 WAV 读写能力与示例。 citeturn9search2turn9search9  
+- 大视频不宜把整条 PCM 留在内存。建议边生成边写 WAV：Rust `hound` 提供 WAV 读写能力与示例。 citeturn9search2turn9search9
 - 若使用 `ffmpeg` 后处理，也可直接写入临时 WAV，再转 AAC。
 
 回退策略（当 `S > W`）按“保真优先→可控优先”排序：
@@ -230,9 +230,7 @@ DeepSeek 的 JSON Output 指南要求：
 
 ```json
 {
-  "items": [
-    {"id": 12, "zh": "……", "max_chars": 18, "note": "可选"}
-  ]
+  "items": [{ "id": 12, "zh": "……", "max_chars": 18, "note": "可选" }]
 }
 ```
 
@@ -310,11 +308,12 @@ r#"请把以下英文字幕逐条翻译为简体中文，要求：
 
 ### 首选集成方式与“官方/非官方”边界
 
-严格意义上，Microsoft 的“免费 Edge Read Aloud”并非面向开发者的正式云 API；社区常用 `edge-tts` 等开源项目对其进行调用。`edge-tts` 仓库的实现清楚给出了其常量与接入方式：  
-- `BASE_URL = "speech.platform.bing.com/consumer/speech/synthesize/readaloud"`  
-- `WSS_URL = wss://.../edge/v1?TrustedClientToken=...`  
+严格意义上，Microsoft 的“免费 Edge Read Aloud”并非面向开发者的正式云 API；社区常用 `edge-tts` 等开源项目对其进行调用。`edge-tts` 仓库的实现清楚给出了其常量与接入方式：
+
+- `BASE_URL = "speech.platform.bing.com/consumer/speech/synthesize/readaloud"`
+- `WSS_URL = wss://.../edge/v1?TrustedClientToken=...`
 - `VOICE_LIST = https://.../voices/list?trustedclienttoken=...`  
-并内置了 Edge/Chromium 风格 UA 与 WebSocket 头。 citeturn23view0
+  并内置了 Edge/Chromium 风格 UA 与 WebSocket 头。 citeturn23view0
 
 此外，社区 Node 实现也提示：Read Aloud API 需要匹配 Microsoft Edge 的 User-Agent，且仅支持 `speak/voice/prosody` 三类 SSML 元素。 citeturn15search6
 
@@ -324,7 +323,7 @@ r#"请把以下英文字幕逐条翻译为简体中文，要求：
 
 基于 `edge-tts` 常量文件：
 
-- 语音列表：`VOICE_LIST = https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=...`  
+- 语音列表：`VOICE_LIST = https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=...`
 - 合成 WS：`wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=...` citeturn23view0
 
 ### `edge-tts` CLI 与 Python API 示例
@@ -360,16 +359,17 @@ asyncio.run(run())
 
 `edge-tts` 的 WebSocket `speech.config` 明确设置 `outputFormat:"audio-24khz-48kbitrate-mono-mp3"`，并解释了其为 **48 kbps CBR**；同时实现了用累计字节数换算 100ns ticks 的补偿机制，以替代易漂移的元数据累积。 citeturn21view3turn23view0
 
-这对本项目的意义是：  
-- 你可以依赖“解码后样本数”得到稳定时长；  
+这对本项目的意义是：
+
+- 你可以依赖“解码后样本数”得到稳定时长；
 - 不建议直接用服务端 `Offset/Duration` 做全局累计对齐（库作者甚至写明旧方案会漂移），而应以每段独立测时长 + 窗口装配为主。 citeturn21view3
 
 ### 免费方案限制与风控变化
 
 必须正视的限制与变化点：
 
-- **UA/地区风控导致 403**：GitHub issue #274 记录了 `WSServerHandshakeError: 403 ...`，建议更新版本或手动更新 User-Agent；更早的 issue #290 讨论了需要实现 `Sec-MS-GEC` token。 citeturn22search5turn7search12  
-- `edge-tts` 实现中 WebSocket 连接参数拼接了 `&Sec-MS-GEC=...&Sec-MS-GEC-Version=...`，且 `SEC_MS_GEC_VERSION` 与 Chromium 版本绑定（`1-<CHROMIUM_FULL_VERSION>`）。 citeturn20view0turn23view0  
+- **UA/地区风控导致 403**：GitHub issue #274 记录了 `WSServerHandshakeError: 403 ...`，建议更新版本或手动更新 User-Agent；更早的 issue #290 讨论了需要实现 `Sec-MS-GEC` token。 citeturn22search5turn7search12
+- `edge-tts` 实现中 WebSocket 连接参数拼接了 `&Sec-MS-GEC=...&Sec-MS-GEC-Version=...`，且 `SEC_MS_GEC_VERSION` 与 Chromium 版本绑定（`1-<CHROMIUM_FULL_VERSION>`）。 citeturn20view0turn23view0
 - **请求过载/限流**：服务可能返回 HTTP 429；429 表示在一段时间内请求太多，可通过 `Retry-After` 指示等待。 citeturn7search8turn7search1
 
 工程建议的并发/速率控制（保守且可调）：
@@ -421,20 +421,20 @@ sidecar 的配置与权限模型细节见官方文档。 citeturn26search0
 
 音频处理链路（推荐组合）：
 
-- 解码：`symphonia`（纯 Rust，多格式解复用/解码）。 citeturn10search5turn10search1  
-- 重采样：`rubato`（离线批处理也适配，建议复用 resampler）。 citeturn10search12turn10search0  
-- WAV 写入：`hound`（写中间 WAV，便于 FFmpeg 再封装）。 citeturn9search2turn9search9  
-- VAD（可选）：`webrtc_vad`（更稳健裁静音）。 citeturn9search5turn9search0  
+- 解码：`symphonia`（纯 Rust，多格式解复用/解码）。 citeturn10search5turn10search1
+- 重采样：`rubato`（离线批处理也适配，建议复用 resampler）。 citeturn10search12turn10search0
+- WAV 写入：`hound`（写中间 WAV，便于 FFmpeg 再封装）。 citeturn9search2turn9search9
+- VAD（可选）：`webrtc_vad`（更稳健裁静音）。 citeturn9search5turn9search0
 
 字幕解析与写回：
 
-- `subparse`：docs.rs 明确其提供对 `.srt/.ssa/.ass/.idx/.sub` 等常见字幕格式的非破坏性解析/修改/保存接口。 citeturn27search2  
-- 对 VTT：若不选库，可按 W3C WebVTT 规范自研 parser；但为了减少 bug，建议优先用成熟库并补齐 VTT（必要时自实现转换）。 citeturn1search0turn27search2  
+- `subparse`：docs.rs 明确其提供对 `.srt/.ssa/.ass/.idx/.sub` 等常见字幕格式的非破坏性解析/修改/保存接口。 citeturn27search2
+- 对 VTT：若不选库，可按 W3C WebVTT 规范自研 parser；但为了减少 bug，建议优先用成熟库并补齐 VTT（必要时自实现转换）。 citeturn1search0turn27search2
 
 ASS 硬字幕渲染（如需内嵌到画面）：
 
-- FFmpeg 的 `subtitles/ass` 滤镜基于 `libass` 渲染 ASS/SSA；FFmpeg wiki 说明使用该滤镜需要编译时启用 `--enable-libass`。 citeturn12search2turn27search3  
-- 若你需要在应用内渲染预览字幕（而非交给 FFmpeg），`libass` 本身也是可集成选项。 citeturn27search3  
+- FFmpeg 的 `subtitles/ass` 滤镜基于 `libass` 渲染 ASS/SSA；FFmpeg wiki 说明使用该滤镜需要编译时启用 `--enable-libass`。 citeturn12search2turn27search3
+- 若你需要在应用内渲染预览字幕（而非交给 FFmpeg），`libass` 本身也是可集成选项。 citeturn27search3
 
 ### FFmpeg 封装建议
 
@@ -451,7 +451,7 @@ ASS 硬字幕渲染（如需内嵌到画面）：
 
 单元测试（不依赖外部网络）：
 
-- 字幕解析：覆盖 SRT/VTT/ASS 的边界输入（多行、空行、BOM、ASS override tags、`\\N` 换行等）。ASS tags 与特殊字符规则可参考 Aegisub 文档。 citeturn11search1  
+- 字幕解析：覆盖 SRT/VTT/ASS 的边界输入（多行、空行、BOM、ASS override tags、`\\N` 换行等）。ASS tags 与特殊字符规则可参考 Aegisub 文档。 citeturn11search1
 - 时间窗构建：随机生成 cue 序列，验证 `deadline_i <= start_{i+1}`，且 `window_len>=0`。
 - 拼接器：给定若干“假音频片段长度”，验证输出音频总样本数等于最后 deadline，且从不出现写指针回退。
 
@@ -474,26 +474,26 @@ ASS 硬字幕渲染（如需内嵌到画面）：
 - 极短 cue（< 400 ms）：基本无法朗读完整语义，必须触发压缩/合并。
 - cue 时间戳重叠：尤其 ASS 可能多层同屏，对单音轨配音是天然冲突，应提示用户并选择“优先级规则”（例如只读主层/最长文本/指定 speaker）。
 - Edge TTS 403/401：应自动降并发、提示切换网络/代理、或切换到替代 TTS。
-- DeepSeek 空 content（JSON mode 已知概率问题）：应自动重试并增强 prompt 示例。 citeturn24search1  
+- DeepSeek 空 content（JSON mode 已知概率问题）：应自动重试并增强 prompt 示例。 citeturn24search1
 
 ### 推荐开源项目与库对比表
 
-| 组件 | 推荐项目/库 | 优点 | 局限/风险 |
-|---|---|---|---|
-| 字幕解析/写回 | `subparse` (Rust) | 支持多种常见字幕格式（`.srt/.ssa/.ass/.idx/.sub`），强调非破坏性解析、可修改再保存。 citeturn27search2 | VTT 不在其主列举格式中，若输入为 `.vtt` 需自研或另选库/转换。 |
-| 翻译 LLM | DeepSeek API（OpenAI 兼容） | 官方文档给出 `chat/completions`、base_url、模型映射；支持 JSON Output 强结构化，适合字幕逐条输出。 citeturn24search0turn24search1 | 高负载可能动态限流 503/429、排队 keep-alive；JSON Output 可能返回空 content，需要重试与 prompt 调整。 citeturn24search7turn24search1 |
-| 免费 TTS（Read Aloud） | `edge-tts` (Python) | 给出明确 WS/voice-list 端点、UA/头部、`Sec-MS-GEC` 等连接细节；支持 rate/volume/pitch 与 boundary 元数据。 citeturn23view0turn18view1turn21view3 | 非官方免费通道：UA/地区风控变化会导致 403/401；需并发限流、缓存、回退与可配置代理。 citeturn22search5turn7search12 |
-| 音频解码 | `symphonia` (Rust) | 纯 Rust，多容器/多编码支持，适合桌面端跨平台。 citeturn10search5turn10search1 | 需要正确选择 feature flags 才能覆盖目标编码；性能与 ffmpeg 相比可能略有差异（需基准）。 |
-| 重采样 | `rubato` (Rust) | 灵活的采样率转换，支持批处理；文档建议复用 resampler 降低开销。 citeturn10search12turn10search0 | 需做 float PCM 转换；工程上要注意通道布局与交错/非交错格式。 citeturn10search8 |
-| WAV 写入 | `hound` (Rust) | 简单可靠写 WAV，中间格式友好，便于 FFmpeg 再封装。 citeturn9search2turn9search9 | 仅 WAV；最终封装到 MP4/MKV 仍需 FFmpeg 或编解码库。 |
-| VAD（静音裁剪） | `webrtc_vad` (Rust) | 基于 WebRTC VAD，适合裁剪首尾静音以更好落窗。 citeturn9search0turn9search5 | 依赖 C 编译链（libfvad），打包时要处理构建环境。 citeturn9search0 |
-| 硬字幕渲染 | `libass` | 业界通用 ASS/SSA 渲染库；FFmpeg `subtitles/ass` 滤镜依赖它。 citeturn27search3turn12search2 | 集成成本较高（字体、平台依赖），且硬字幕必然重编码视频。 citeturn12search2 |
-| 侧车编排 | Tauri2 `plugin-shell` sidecar | 官方支持打包外部二进制并从 Rust/JS 启动；能力授权模型清晰。 citeturn26search0 | 需要为不同 target triple 准备二进制；权限配置出错会导致无法启动。 citeturn26search0 |
+| 组件                   | 推荐项目/库                   | 优点                                                                                                                                                  | 局限/风险                                                                                                                                |
+| ---------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 字幕解析/写回          | `subparse` (Rust)             | 支持多种常见字幕格式（`.srt/.ssa/.ass/.idx/.sub`），强调非破坏性解析、可修改再保存。 citeturn27search2                                             | VTT 不在其主列举格式中，若输入为 `.vtt` 需自研或另选库/转换。                                                                            |
+| 翻译 LLM               | DeepSeek API（OpenAI 兼容）   | 官方文档给出 `chat/completions`、base_url、模型映射；支持 JSON Output 强结构化，适合字幕逐条输出。 citeturn24search0turn24search1                 | 高负载可能动态限流 503/429、排队 keep-alive；JSON Output 可能返回空 content，需要重试与 prompt 调整。 citeturn24search7turn24search1 |
+| 免费 TTS（Read Aloud） | `edge-tts` (Python)           | 给出明确 WS/voice-list 端点、UA/头部、`Sec-MS-GEC` 等连接细节；支持 rate/volume/pitch 与 boundary 元数据。 citeturn23view0turn18view1turn21view3 | 非官方免费通道：UA/地区风控变化会导致 403/401；需并发限流、缓存、回退与可配置代理。 citeturn22search5turn7search12                   |
+| 音频解码               | `symphonia` (Rust)            | 纯 Rust，多容器/多编码支持，适合桌面端跨平台。 citeturn10search5turn10search1                                                                     | 需要正确选择 feature flags 才能覆盖目标编码；性能与 ffmpeg 相比可能略有差异（需基准）。                                                  |
+| 重采样                 | `rubato` (Rust)               | 灵活的采样率转换，支持批处理；文档建议复用 resampler 降低开销。 citeturn10search12turn10search0                                                   | 需做 float PCM 转换；工程上要注意通道布局与交错/非交错格式。 citeturn10search8                                                        |
+| WAV 写入               | `hound` (Rust)                | 简单可靠写 WAV，中间格式友好，便于 FFmpeg 再封装。 citeturn9search2turn9search9                                                                   | 仅 WAV；最终封装到 MP4/MKV 仍需 FFmpeg 或编解码库。                                                                                      |
+| VAD（静音裁剪）        | `webrtc_vad` (Rust)           | 基于 WebRTC VAD，适合裁剪首尾静音以更好落窗。 citeturn9search0turn9search5                                                                        | 依赖 C 编译链（libfvad），打包时要处理构建环境。 citeturn9search0                                                                     |
+| 硬字幕渲染             | `libass`                      | 业界通用 ASS/SSA 渲染库；FFmpeg `subtitles/ass` 滤镜依赖它。 citeturn27search3turn12search2                                                       | 集成成本较高（字体、平台依赖），且硬字幕必然重编码视频。 citeturn12search2                                                            |
+| 侧车编排               | Tauri2 `plugin-shell` sidecar | 官方支持打包外部二进制并从 Rust/JS 启动；能力授权模型清晰。 citeturn26search0                                                                      | 需要为不同 target triple 准备二进制；权限配置出错会导致无法启动。 citeturn26search0                                                   |
 
 ### 可能的限制与替代方案
 
-- Edge TTS 免费通道不稳定：若持续出现 403/401、或对并发/配额有确定性要求，应切换到 **Azure Speech 正式 TTS**。微软 SSML 文档展示 Azure Speech 可用 `<break>`、`<prosody>` 等精细控制，适合“用 SSML 直接把停顿写进合成语音”以降低后处理复杂度。 citeturn15search3turn15search1  
-- 离线 TTS：如需完全离线、避免网络与风控，可考虑本地神经 TTS 引擎。例如 `rhasspy/piper` 被描述为“fast, local neural text to speech system”（但仓库已归档为只读），`coqui-ai/TTS` 提供可本地运行/训练的 TTS 工具链。 citeturn27search0turn27search1  
-- 字幕格式覆盖：若必须完整支持 VTT 编辑与写回，需选择支持 VTT 的库或实现转换；SRT/VTT/ASS 互转也可考虑其他库，但要评估成熟度与无损性目标（例如 `subparse` 强调保留格式信息）。 citeturn27search2turn1search0  
+- Edge TTS 免费通道不稳定：若持续出现 403/401、或对并发/配额有确定性要求，应切换到 **Azure Speech 正式 TTS**。微软 SSML 文档展示 Azure Speech 可用 `<break>`、`<prosody>` 等精细控制，适合“用 SSML 直接把停顿写进合成语音”以降低后处理复杂度。 citeturn15search3turn15search1
+- 离线 TTS：如需完全离线、避免网络与风控，可考虑本地神经 TTS 引擎。例如 `rhasspy/piper` 被描述为“fast, local neural text to speech system”（但仓库已归档为只读），`coqui-ai/TTS` 提供可本地运行/训练的 TTS 工具链。 citeturn27search0turn27search1
+- 字幕格式覆盖：若必须完整支持 VTT 编辑与写回，需选择支持 VTT 的库或实现转换；SRT/VTT/ASS 互转也可考虑其他库，但要评估成熟度与无损性目标（例如 `subparse` 强调保留格式信息）。 citeturn27search2turn1search0
 
 以上方案的关键成功点在于：把“翻译质量”与“时长可控/可落窗”同时建模，并通过 **合成后测时长的闭环重试**与 **单音轨严格窗口装配**实现不重叠同步；同时把 Edge TTS 的不确定性视为系统性风险，在架构上预留替代后端与强健的限流、重试、缓存与诊断能力。

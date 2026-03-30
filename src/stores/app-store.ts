@@ -14,6 +14,7 @@ interface AppState {
   toggleSidebar: () => void
   setEditingTaskId: (id: string | null) => void
 
+  setTasks: (tasks: VideoTask[]) => void
   addTasks: (tasks: VideoTask[]) => void
   removeTask: (id: string) => void
   clearTasks: () => void
@@ -31,8 +32,7 @@ export const useAppStore = create<AppState>((set) => ({
   sidebarOpen: true,
   editingTaskId: null,
 
-  setConfig: (partial) =>
-    set((state) => ({ config: { ...state.config, ...partial } })),
+  setConfig: (partial) => set((state) => ({ config: { ...state.config, ...partial } })),
 
   loadConfig: (config) => set({ config }),
 
@@ -42,35 +42,31 @@ export const useAppStore = create<AppState>((set) => ({
 
   setEditingTaskId: (id) => set({ editingTaskId: id }),
 
-  addTasks: (tasks) =>
-    set((state) => ({ tasks: [...state.tasks, ...tasks] })),
+  setTasks: (tasks) => set({ tasks }),
 
-  removeTask: (id) =>
-    set((state) => ({ tasks: state.tasks.filter((t) => t.id !== id) })),
+  addTasks: (tasks) => set((state) => ({ tasks: [...state.tasks, ...tasks] })),
+
+  removeTask: (id) => set((state) => ({ tasks: state.tasks.filter((t) => t.id !== id) })),
 
   clearTasks: () => set({ tasks: [] }),
 
   updateTaskStatus: (id, status, progress) =>
     set((state) => ({
       tasks: state.tasks.map((t) =>
-        t.id === id
-          ? { ...t, status, ...(progress !== undefined ? { progress } : {}) }
-          : t
-      )
+        t.id === id ? { ...t, status, ...(progress !== undefined ? { progress } : {}) } : t
+      ),
     })),
 
   updateTaskError: (id, error) =>
     set((state) => ({
       tasks: state.tasks.map((t) =>
         t.id === id ? { ...t, status: 'error' as TaskStatus, error } : t
-      )
+      ),
     })),
 
   updateTaskSubtitlePath: (id, subtitlePath) =>
     set((state) => ({
-      tasks: state.tasks.map((t) =>
-        t.id === id ? { ...t, subtitlePath } : t
-      )
+      tasks: state.tasks.map((t) => (t.id === id ? { ...t, subtitlePath } : t)),
     })),
 
   updateTaskCues: (id, englishCues, chineseCues) =>
@@ -80,23 +76,19 @@ export const useAppStore = create<AppState>((set) => ({
           ? {
               ...t,
               ...(englishCues !== undefined ? { englishCues } : {}),
-              ...(chineseCues !== undefined ? { chineseCues } : {})
+              ...(chineseCues !== undefined ? { chineseCues } : {}),
             }
           : t
-      )
+      ),
     })),
 
   updateTaskCountdown: (id, remaining) =>
     set((state) => ({
-      tasks: state.tasks.map((t) =>
-        t.id === id ? { ...t, countdownRemaining: remaining } : t
-      )
+      tasks: state.tasks.map((t) => (t.id === id ? { ...t, countdownRemaining: remaining } : t)),
     })),
 
   updateTaskChineseCues: (id, cues) =>
     set((state) => ({
-      tasks: state.tasks.map((t) =>
-        t.id === id ? { ...t, chineseCues: cues } : t
-      )
-    }))
+      tasks: state.tasks.map((t) => (t.id === id ? { ...t, chineseCues: cues } : t)),
+    })),
 }))

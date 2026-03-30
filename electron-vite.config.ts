@@ -7,17 +7,17 @@ const __dir = dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ['p-limit'] })]
+    plugins: [externalizeDepsPlugin({ exclude: ['p-limit'] })],
   },
   preload: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
   },
   renderer: {
     resolve: {
       alias: {
-        '@': resolve(__dir, 'src')
-      }
+        '@': resolve(__dir, 'src'),
+      },
     },
-    plugins: [react()]
-  }
+    plugins: [react()],
+  },
 })

@@ -1,11 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppStore } from '../stores/app-store'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
 import { Button } from './ui/button'
 import { Textarea } from './ui/textarea'
 import { Badge } from './ui/badge'
@@ -30,8 +25,7 @@ const TIME_CLS =
 const TEXT_BLOCK = 'min-w-0 flex-1 text-sm leading-6'
 
 export function SubtitleEditor() {
-  const { editingTaskId, tasks, config, setEditingTaskId, updateTaskChineseCues } =
-    useAppStore()
+  const { editingTaskId, tasks, config, setEditingTaskId, updateTaskChineseCues } = useAppStore()
 
   const task = tasks.find((t) => t.id === editingTaskId)
   const [localCues, setLocalCues] = useState<Cue[]>([])
@@ -56,9 +50,7 @@ export function SubtitleEditor() {
 
   useEffect(() => {
     if (!editingTaskId || !task?.chineseCues?.length) return
-    setLocalCues((prev) =>
-      prev.length === 0 ? task.chineseCues!.map((c) => ({ ...c })) : prev
-    )
+    setLocalCues((prev) => (prev.length === 0 ? task.chineseCues!.map((c) => ({ ...c })) : prev))
   }, [editingTaskId, task?.chineseCues])
 
   useEffect(() => {
@@ -94,8 +86,9 @@ export function SubtitleEditor() {
   const handleSave = useCallback(() => {
     if (!editingTaskId) return
     updateTaskChineseCues(editingTaskId, localCues)
-    window.api?.task.saveReview(editingTaskId, localCues)
-  }, [editingTaskId, localCues, updateTaskChineseCues])
+    window.api?.task.confirmReview(editingTaskId, localCues)
+    setEditingTaskId(null)
+  }, [editingTaskId, localCues, updateTaskChineseCues, setEditingTaskId])
 
   const handleApply = useCallback(() => {
     if (!editingTaskId) return
@@ -128,8 +121,8 @@ export function SubtitleEditor() {
                   variant="outline"
                   className={
                     countdownActive
-                      ? 'bg-amber-100 text-amber-700 border-amber-200'
-                      : 'bg-gray-100 text-gray-500 border-gray-200'
+                      ? 'border-amber-500/30 bg-amber-500/15 text-amber-200/95'
+                      : 'border-border bg-muted text-muted-foreground'
                   }
                 >
                   <Timer className="size-3" />
@@ -142,7 +135,7 @@ export function SubtitleEditor() {
               {isEditable && isAutoMode && (
                 <Button variant="outline" size="sm" onClick={handleSave}>
                   <Save className="size-3" />
-                  保存
+                  保存并继续
                 </Button>
               )}
               {isEditable && !isAutoMode && (
@@ -165,7 +158,7 @@ export function SubtitleEditor() {
             </div>
             <div
               ref={leftScrollRef}
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-md border bg-background p-3"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-md border border-border bg-input-bg p-3"
               onScroll={(e) => syncScrollFrom('left', e.currentTarget.scrollTop)}
             >
               <div>
@@ -174,21 +167,15 @@ export function SubtitleEditor() {
                   return (
                     <div key={cue?.id ?? `en-${i}`} className={ROW_MIN}>
                       <span className={IDX_CLS}>{i + 1}</span>
-                      <span className={TIME_CLS}>
-                        {cue ? formatTimestamp(cue.startUs) : '—'}
-                      </span>
-                      <p
-                        className={`${TEXT_BLOCK} min-h-[4.5rem] whitespace-pre-wrap break-words`}
-                      >
+                      <span className={TIME_CLS}>{cue ? formatTimestamp(cue.startUs) : '—'}</span>
+                      <p className={`${TEXT_BLOCK} min-h-[4.5rem] whitespace-pre-wrap break-words`}>
                         {cue?.text ?? ''}
                       </p>
                     </div>
                   )
                 })}
                 {rowCount === 0 && (
-                  <p className="py-8 text-center text-sm text-muted-foreground">
-                    暂无英文字幕
-                  </p>
+                  <p className="py-8 text-center text-sm text-muted-foreground">暂无英文字幕</p>
                 )}
               </div>
             </div>
@@ -197,13 +184,11 @@ export function SubtitleEditor() {
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="mb-2 shrink-0 px-1 text-sm font-medium text-muted-foreground">
               中文字幕
-              {isEditable && (
-                <span className="ml-2 text-xs text-amber-600">可编辑</span>
-              )}
+              {isEditable && <span className="ml-2 text-xs text-primary/90">可编辑</span>}
             </div>
             <div
               ref={rightScrollRef}
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-md border bg-background p-3"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-md border border-border bg-input-bg p-3"
               onScroll={(e) => syncScrollFrom('right', e.currentTarget.scrollTop)}
             >
               <div>
@@ -214,7 +199,11 @@ export function SubtitleEditor() {
                     <div key={cue?.id ?? en?.id ?? `zh-${i}`} className={ROW_MIN}>
                       <span className={IDX_CLS}>{i + 1}</span>
                       <span className={TIME_CLS}>
-                        {cue ? formatTimestamp(cue.startUs) : en ? formatTimestamp(en.startUs) : '—'}
+                        {cue
+                          ? formatTimestamp(cue.startUs)
+                          : en
+                            ? formatTimestamp(en.startUs)
+                            : '—'}
                       </span>
                       {isEditable ? (
                         <Textarea
@@ -234,9 +223,7 @@ export function SubtitleEditor() {
                   )
                 })}
                 {rowCount === 0 && (
-                  <p className="py-8 text-center text-sm text-muted-foreground">
-                    暂无中文字幕
-                  </p>
+                  <p className="py-8 text-center text-sm text-muted-foreground">暂无中文字幕</p>
                 )}
               </div>
             </div>

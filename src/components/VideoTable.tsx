@@ -4,14 +4,7 @@ import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { ScrollArea } from './ui/scroll-area'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from './ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 import { Pencil, Eye, Pause, Play, Trash2, FileVideo } from 'lucide-react'
 import type { TaskStatus, VideoTask } from '../types'
 import { TASK_STATUS_META } from '../types'
@@ -37,21 +30,20 @@ function pathFromFileUriInDrag(e: React.DragEvent): string {
 }
 
 const STATUS_COLORS: Record<TaskStatus, string> = {
-  waiting: 'bg-gray-100 text-gray-700',
-  parsing: 'bg-blue-100 text-blue-700',
-  translating: 'bg-purple-100 text-purple-700',
-  reviewing: 'bg-amber-100 text-amber-700',
-  synthesizing: 'bg-orange-100 text-orange-700',
-  assembling: 'bg-cyan-100 text-cyan-700',
-  encoding: 'bg-indigo-100 text-indigo-700',
-  completed: 'bg-green-100 text-green-700',
-  error: 'bg-red-100 text-red-700',
-  paused: 'bg-yellow-100 text-yellow-700',
+  waiting: 'bg-muted text-muted-foreground',
+  parsing: 'bg-muted text-foreground',
+  translating: 'bg-primary/20 text-[#c9c0f5]',
+  reviewing: 'bg-amber-500/15 text-amber-200/95',
+  synthesizing: 'bg-primary/12 text-muted-foreground',
+  assembling: 'bg-sky-500/12 text-sky-200/90',
+  encoding: 'bg-violet-500/12 text-violet-200/90',
+  completed: 'bg-emerald-500/15 text-emerald-200/95',
+  error: 'bg-red-500/15 text-red-300/95',
+  paused: 'bg-amber-500/10 text-amber-200/80',
 }
 
 export function VideoTable() {
-  const { tasks, config, removeTask, updateTaskSubtitlePath, setEditingTaskId } =
-    useAppStore()
+  const { tasks, config, removeTask, updateTaskSubtitlePath, setEditingTaskId } = useAppStore()
 
   const resolveDroppedFilePath = useCallback(
     (e: React.DragEvent, file: File): string | undefined => {
@@ -92,9 +84,7 @@ export function VideoTable() {
   const handlePickSubtitle = useCallback(
     async (task: VideoTask) => {
       const dir = videoDir(task.videoPath)
-      const pick =
-        window.api?.openSubtitlePicker ??
-        window.api?.dialog?.openSubtitle
+      const pick = window.api?.openSubtitlePicker ?? window.api?.dialog?.openSubtitle
       if (typeof pick !== 'function') {
         console.error(
           'preload 未暴露 openSubtitlePicker，请完全退出应用后重新运行 npm run dev / 重新打包'
@@ -134,20 +124,13 @@ export function VideoTable() {
             </>
           )}
           {isAuto && task.countdownRemaining !== undefined && countdownActive && (
-            <span className="ml-1 text-amber-600 tabular-nums">
-              {task.countdownRemaining}s
-            </span>
+            <span className="ml-1 tabular-nums text-amber-400/95">{task.countdownRemaining}s</span>
           )}
         </Button>
       )
     } else if (task.status === 'completed') {
       btns.push(
-        <Button
-          key="view"
-          variant="outline"
-          size="xs"
-          onClick={() => setEditingTaskId(task.id)}
-        >
+        <Button key="view" variant="outline" size="xs" onClick={() => setEditingTaskId(task.id)}>
           <Eye className="size-3" />
           查看
         </Button>
@@ -155,9 +138,7 @@ export function VideoTable() {
     }
 
     if (
-      ['parsing', 'translating', 'synthesizing', 'assembling', 'encoding'].includes(
-        task.status
-      )
+      ['parsing', 'translating', 'synthesizing', 'assembling', 'encoding'].includes(task.status)
     ) {
       btns.push(
         <Button
@@ -213,112 +194,113 @@ export function VideoTable() {
 
   return (
     <ScrollArea className="flex-1">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-[30%]">视频名称</TableHead>
-            <TableHead className="w-[25%]">字幕文件</TableHead>
-            <TableHead className="w-[15%]">进度</TableHead>
-            <TableHead className="w-[30%]">操作</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {tasks.map((task) => (
-            <TableRow key={task.id}>
-              <TableCell>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="block max-w-[220px] truncate cursor-default">
-                      {task.videoName}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="bottom"
-                    className="max-w-[400px] break-all"
-                  >
-                    {task.videoPath}
-                  </TooltipContent>
-                </Tooltip>
-              </TableCell>
-
-              <TableCell>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  className={`border rounded-md px-3 py-1.5 text-sm text-left transition-colors min-h-[2.25rem] flex items-center justify-start cursor-pointer select-none hover:border-primary/50 hover:bg-muted/50 ${
-                    task.subtitlePath
-                      ? 'border-border text-foreground'
-                      : 'border-dashed border-muted-foreground/40 text-muted-foreground'
-                  }`}
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDrop(task.id, e)}
-                  onClick={() => void handlePickSubtitle(task)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      void handlePickSubtitle(task)
-                    }
-                  }}
-                >
-                  {task.subtitlePath ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="block max-w-[220px] truncate cursor-default">
-                          {task.subtitlePath.split(/[\\/]/).pop()}
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent
-                        side="bottom"
-                        className="max-w-[400px] break-all"
-                      >
-                        {task.subtitlePath}
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <span>点击选择或拖拽字幕</span>
-                  )}
-                </div>
-              </TableCell>
-
-              <TableCell>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className={`${STATUS_COLORS[task.status]} border`}>
-                      {TASK_STATUS_META[task.status].label}
-                    </Badge>
-                    {task.progress > 0 && task.status !== 'completed' && task.status !== 'error' && (
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {task.progress}%
+      <div className="px-[15px]">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[30%]">视频名称</TableHead>
+              <TableHead className="w-[25%]">字幕文件</TableHead>
+              <TableHead className="w-[15%]">进度</TableHead>
+              <TableHead className="w-[30%]">操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {tasks.map((task) => (
+              <TableRow key={task.id}>
+                <TableCell>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="block max-w-[220px] truncate cursor-default">
+                        {task.videoName}
                       </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-[400px] break-all">
+                      {task.videoPath}
+                    </TooltipContent>
+                  </Tooltip>
+                </TableCell>
+
+                <TableCell>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className={`flex min-h-[2.25rem] cursor-pointer items-center justify-start rounded-md border border-border bg-input-bg px-3 py-1.5 text-left text-sm transition-colors select-none hover:border-primary/45 hover:bg-muted/40 ${
+                      task.subtitlePath
+                        ? 'text-foreground'
+                        : 'border-dashed border-muted-foreground/35 text-muted-foreground'
+                    }`}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(task.id, e)}
+                    onClick={() => void handlePickSubtitle(task)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        void handlePickSubtitle(task)
+                      }
+                    }}
+                  >
+                    {task.subtitlePath ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="block max-w-[220px] truncate cursor-default">
+                            {task.subtitlePath.split(/[\\/]/).pop()}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-[400px] break-all">
+                          {task.subtitlePath}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <span>点击选择或拖拽字幕</span>
                     )}
                   </div>
-                  {task.progress > 0 && task.status !== 'waiting' && (
-                    <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-300 ${
-                          task.status === 'completed'
-                            ? 'bg-green-500'
-                            : task.status === 'error'
-                              ? 'bg-red-500'
-                              : 'bg-primary'
-                        }`}
-                        style={{ width: `${task.progress}%` }}
-                      />
-                    </div>
-                  )}
-                  {task.error && (
-                    <p className="text-xs text-red-500 truncate max-w-[160px]" title={task.error}>
-                      {task.error}
-                    </p>
-                  )}
-                </div>
-              </TableCell>
+                </TableCell>
 
-              <TableCell>{renderOps(task)}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+                <TableCell>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className={`${STATUS_COLORS[task.status]} border-border`}
+                      >
+                        {TASK_STATUS_META[task.status].label}
+                      </Badge>
+                      {task.progress > 0 &&
+                        task.status !== 'completed' &&
+                        task.status !== 'error' && (
+                          <span className="text-xs text-muted-foreground tabular-nums">
+                            {task.progress}%
+                          </span>
+                        )}
+                    </div>
+                    {task.progress > 0 && task.status !== 'waiting' && (
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            task.status === 'completed'
+                              ? 'bg-emerald-500/85'
+                              : task.status === 'error'
+                                ? 'bg-red-400/90'
+                                : 'bg-primary'
+                          }`}
+                          style={{ width: `${task.progress}%` }}
+                        />
+                      </div>
+                    )}
+                    {task.error && (
+                      <p className="max-w-[160px] truncate text-xs text-red-400" title={task.error}>
+                        {task.error}
+                      </p>
+                    )}
+                  </div>
+                </TableCell>
+
+                <TableCell>{renderOps(task)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </ScrollArea>
   )
 }

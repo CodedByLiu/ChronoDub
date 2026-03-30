@@ -67,13 +67,10 @@ export const DEFAULT_CONFIG: AppConfig = {
   selectedVoice: '',
   outputDir: '',
   reviewMode: 'auto',
-  autoReviewCountdown: 30
+  autoReviewCountdown: 30,
 }
 
-export const TASK_STATUS_META: Record<
-  TaskStatus,
-  { label: string; color: string }
-> = {
+export const TASK_STATUS_META: Record<TaskStatus, { label: string; color: string }> = {
   waiting: { label: '等待中', color: 'gray' },
   parsing: { label: '解析中', color: 'blue' },
   translating: { label: '翻译中', color: 'purple' },
@@ -83,7 +80,7 @@ export const TASK_STATUS_META: Record<
   encoding: { label: '封装中', color: 'indigo' },
   completed: { label: '已完成', color: 'green' },
   error: { label: '失败', color: 'red' },
-  paused: { label: '已暂停', color: 'yellow' }
+  paused: { label: '已暂停', color: 'yellow' },
 }
 
 export interface TaskStartInfo {
@@ -125,6 +122,8 @@ export interface IpcApi {
     pathFromFile: (file: File) => string
   }
   task: {
+    loadSnapshot: () => Promise<VideoTask[]>
+    saveSnapshot: (tasks: VideoTask[]) => Promise<void>
     start: (tasks: TaskStartInfo[]) => void
     pause: (taskId: string) => void
     resume: (taskId: string) => void
@@ -132,9 +131,13 @@ export interface IpcApi {
     cancelAll: (taskIds: string[]) => void
     saveReview: (taskId: string, cues: Cue[]) => void
     confirmReview: (taskId: string, cues: Cue[]) => void
-    onProgress: (callback: (taskId: string, status: TaskStatus, progress: number) => void) => () => void
+    onProgress: (
+      callback: (taskId: string, status: TaskStatus, progress: number) => void
+    ) => () => void
     onReviewCountdown: (callback: (taskId: string, remaining: number) => void) => () => void
-    onReviewReady: (callback: (taskId: string, englishCues: Cue[], chineseCues: Cue[]) => void) => () => void
+    onReviewReady: (
+      callback: (taskId: string, englishCues: Cue[], chineseCues: Cue[]) => void
+    ) => () => void
     onError: (callback: (taskId: string, message: string) => void) => () => void
   }
 }

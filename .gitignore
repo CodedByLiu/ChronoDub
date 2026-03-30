@@ -2,6 +2,10 @@ node_modules/
 out/
 dist/
 dist-electron/
+release/
+build/icon.icns
+build/icon.ico
+build/icon.iconset/
 
 .DS_Store
 Thumbs.db
