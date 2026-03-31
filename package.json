@@ -2,6 +2,8 @@
   "name": "chrono-dub-app",
   "productName": "ChronoDub",
   "version": "1.0.0",
+  "author": "CodedByLiu",
+  "packageManager": "npm@11.6.2",
   "description": "中文字幕与配音自动生成桌面应用",
   "main": "./out/main/index.js",
   "scripts": {
@@ -17,7 +19,7 @@
     "icons:mac": "bash scripts/generate-mac-icon.sh",
     "icons:win": "node scripts/generate-win-icon.mjs",
     "dist:mac": "npm run icons:mac && npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
-    "dist:win": "npm run icons:win && npm run build && electron-builder --win",
+    "dist:win": "npm run icons:win && npm run build && set \"ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/\" && electron-builder --win",
     "dist:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
