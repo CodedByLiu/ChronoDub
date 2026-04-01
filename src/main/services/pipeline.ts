@@ -2,16 +2,14 @@ import { mkdirSync, rmSync } from 'fs'
 import { join, basename, extname } from 'path'
 import { BrowserWindow } from 'electron'
 import type { Cue, Segment, TimeWindow, AppConfig, TaskStatus } from '../../types'
-import { parseSubtitleFile, cuesToSrt, saveSubtitleFile } from './subtitle-parser'
-import { translateCues, applyTerminologyToChinese } from './deepseek'
-import { synthesize } from './edge-tts'
+import { parseSubtitleFile, saveSubtitleFile } from './subtitle-parser'
+import { translateSegments, applyTerminologyToChinese } from './deepseek'
 import { ffprobe, muxVideoWithAudio } from './ffmpeg'
 import {
   buildSegments,
   buildTimeWindows,
   calibrateCPS,
   assignBudgets,
-  processAudio,
   synthesizeWithFallback,
   assembleToWav,
   type AssemblerSegment,
@@ -135,6 +133,107 @@ function manualReview(taskId: string, state: TaskState): Promise<Cue[]> {
     state.reviewResolver = resolve
     state.reviewRejecter = reject
   })
+}
+
+const ASCII_WORD_CHAR_RE = /[A-Za-z0-9_./#+-]/
+const PREFERRED_SPLIT_AFTER_RE = /[\s,.;:!?，。；：！？、）)\]}]/
+const PREFERRED_SPLIT_BEFORE_RE = /[\s（([{]/
+
+function isAsciiWordChar(ch: string | undefined): boolean {
+  return !!ch && ASCII_WORD_CHAR_RE.test(ch)
+}
+
+function isSafeSplitBoundary(text: string, index: number): boolean {
+  const prev = text[index - 1]
+  const next = text[index]
+  if (!prev || !next) return true
+  return !(isAsciiWordChar(prev) && isAsciiWordChar(next))
+}
+
+function isPreferredSplitBoundary(text: string, index: number): boolean {
+  const prev = text[index - 1]
+  const next = text[index]
+  if (!prev || !next) return true
+  if (PREFERRED_SPLIT_AFTER_RE.test(prev) || PREFERRED_SPLIT_BEFORE_RE.test(next)) return true
+  return isSafeSplitBoundary(text, index)
+}
+
+function findSplitBoundary(text: string, target: number, min: number, max: number): number {
+  const clamped = Math.max(min, Math.min(max, target))
+  const maxRadius = Math.max(clamped - min, max - clamped)
+
+  for (let radius = 0; radius <= maxRadius; radius++) {
+    const left = clamped - radius
+    const right = clamped + radius
+
+    if (left >= min && isPreferredSplitBoundary(text, left)) return left
+    if (right <= max && right !== left && isPreferredSplitBoundary(text, right)) return right
+  }
+
+  for (let radius = 0; radius <= maxRadius; radius++) {
+    const left = clamped - radius
+    const right = clamped + radius
+
+    if (left >= min && isSafeSplitBoundary(text, left)) return left
+    if (right <= max && right !== left && isSafeSplitBoundary(text, right)) return right
+  }
+
+  return clamped
+}
+
+function splitSegmentTextAcrossCues(text: string, cues: Cue[]): string[] {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (cues.length === 0) return []
+  if (cues.length === 1) return [normalized]
+  if (!normalized) return Array(cues.length).fill('')
+
+  const weights = cues.map((cue) => Math.max(1, cue.endUs - cue.startUs))
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
+
+  const boundaries: number[] = []
+  let consumedWeight = 0
+  let lastBoundary = 0
+
+  for (let i = 0; i < cues.length - 1; i++) {
+    consumedWeight += weights[i]
+    const target = Math.round((normalized.length * consumedWeight) / totalWeight)
+    const remainingParts = cues.length - i - 1
+    const min = lastBoundary + 1
+    const max = normalized.length - remainingParts
+    const boundary = findSplitBoundary(normalized, target, min, max)
+    boundaries.push(boundary)
+    lastBoundary = boundary
+  }
+
+  const pieces: string[] = []
+  let start = 0
+  for (const boundary of boundaries) {
+    pieces.push(normalized.slice(start, boundary).trim())
+    start = boundary
+  }
+  pieces.push(normalized.slice(start).trim())
+
+  return pieces
+}
+
+function joinCueTextsForSpeech(parts: string[]): string {
+  let text = ''
+
+  for (const part of parts) {
+    const trimmed = part.trim()
+    if (!trimmed) continue
+
+    if (!text) {
+      text = trimmed
+      continue
+    }
+
+    const prev = text[text.length - 1]
+    const next = trimmed[0]
+    text += isAsciiWordChar(prev) && isAsciiWordChar(next) ? ` ${trimmed}` : trimmed
+  }
+
+  return text
 }
 
 // ─── Public API for IPC handlers ────────────────
@@ -268,22 +367,18 @@ export async function runPipeline(
     // Step 5: Assign budgets
     assignBudgets(windows, cps)
 
-    // Step 6: Translate with DeepSeek
+    // Step 6: Translate with DeepSeek at segment granularity
     reportProgress(taskId, 'translating', 20)
-    const budgetMap = new Map<number, number>()
+    const segmentBudgetMap = new Map<number, number>()
     for (const w of windows) {
-      const seg = segments[w.segmentId]
-      for (const cueId of seg.cueIds) {
-        const cueCount = seg.cueIds.length
-        budgetMap.set(cueId, Math.max(1, Math.floor(w.budgetChars / cueCount)))
-      }
+      segmentBudgetMap.set(w.segmentId, Math.max(1, w.budgetChars))
     }
 
-    const translations = await translateCues(
-      englishCues,
+    const translations = await translateSegments(
+      segments.map((segment) => ({ id: segment.id, text: segment.textEn })),
       config.deepseekKey,
       config.dictionary,
-      budgetMap,
+      segmentBudgetMap,
       async () => {
         await checkPaused(taskId)
         checkCancelled(taskId)
@@ -293,11 +388,26 @@ export async function runPipeline(
     await checkPaused(taskId)
     checkCancelled(taskId)
 
-    const chineseCues: Cue[] = englishCues.map((cue) => {
-      const raw = translations.get(cue.id) || cue.text
-      const text = applyTerminologyToChinese(cue.text, raw, config.dictionary)
-      return { ...cue, text }
-    })
+    const englishCueMap = new Map<number, Cue>(englishCues.map((cue) => [cue.id, cue]))
+    const translatedCueTextMap = new Map<number, string>()
+
+    for (const segment of segments) {
+      const raw = translations.get(segment.id) || segment.textEn
+      const segmentText = applyTerminologyToChinese(segment.textEn, raw, config.dictionary)
+      const segmentCues = segment.cueIds
+        .map((cueId) => englishCueMap.get(cueId))
+        .filter((cue): cue is Cue => !!cue)
+      const cueTexts = splitSegmentTextAcrossCues(segmentText, segmentCues)
+
+      segmentCues.forEach((cue, index) => {
+        translatedCueTextMap.set(cue.id, cueTexts[index] || '')
+      })
+    }
+
+    const chineseCues: Cue[] = englishCues.map((cue) => ({
+      ...cue,
+      text: translatedCueTextMap.get(cue.id) || cue.text,
+    }))
 
     reportProgress(taskId, 'translating', 45)
 
@@ -314,7 +424,7 @@ export async function runPipeline(
     for (const c of reviewedCues) cueTextMap.set(c.id, c.text)
 
     for (const seg of segments) {
-      seg.textZh = seg.cueIds.map((id) => cueTextMap.get(id) || '').join('')
+      seg.textZh = joinCueTextsForSpeech(seg.cueIds.map((id) => cueTextMap.get(id) || ''))
     }
 
     // Step 8 & 9: TTS synthesis per segment with fallback + duration measurement

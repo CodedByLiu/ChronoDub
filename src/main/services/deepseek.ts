@@ -45,6 +45,12 @@ interface TranslationResult {
   translations: Array<{ id: number; text: string }>
 }
 
+interface TranslationInputItem {
+  id: number
+  text: string
+  max_chars?: number
+}
+
 function escapeRegexTerm(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -93,12 +99,45 @@ export async function translateCues(
   maxCharsPerCue?: Map<number, number>,
   betweenBatches?: () => void | Promise<void>
 ): Promise<Map<number, string>> {
+  const items = cues.map((cue) => ({
+    id: cue.id,
+    text: cue.text,
+    ...(maxCharsPerCue?.has(cue.id) ? { max_chars: maxCharsPerCue.get(cue.id) } : {}),
+  }))
+
+  return translateItems(items, apiKey, dictionary, betweenBatches)
+}
+
+export async function translateSegments(
+  segments: Array<{ id: number; text: string }>,
+  apiKey: string,
+  dictionary: Array<{ en: string; zh: string }>,
+  maxCharsPerSegment?: Map<number, number>,
+  betweenBatches?: () => void | Promise<void>
+): Promise<Map<number, string>> {
+  const items = segments.map((segment) => ({
+    id: segment.id,
+    text: segment.text,
+    ...(maxCharsPerSegment?.has(segment.id)
+      ? { max_chars: maxCharsPerSegment.get(segment.id) }
+      : {}),
+  }))
+
+  return translateItems(items, apiKey, dictionary, betweenBatches)
+}
+
+async function translateItems(
+  items: TranslationInputItem[],
+  apiKey: string,
+  dictionary: Array<{ en: string; zh: string }>,
+  betweenBatches?: () => void | Promise<void>
+): Promise<Map<number, string>> {
   const result = new Map<number, string>()
 
-  for (let i = 0; i < cues.length; i += BATCH_SIZE) {
+  for (let i = 0; i < items.length; i += BATCH_SIZE) {
     await betweenBatches?.()
-    const batch = cues.slice(i, i + BATCH_SIZE)
-    const batchResult = await translateBatch(batch, apiKey, dictionary, maxCharsPerCue)
+    const batch = items.slice(i, i + BATCH_SIZE)
+    const batchResult = await translateBatch(batch, apiKey, dictionary)
     for (const [id, text] of batchResult) {
       result.set(id, text)
     }
@@ -108,10 +147,9 @@ export async function translateCues(
 }
 
 async function translateBatch(
-  cues: Cue[],
+  items: TranslationInputItem[],
   apiKey: string,
-  dictionary: Array<{ en: string; zh: string }>,
-  maxCharsPerCue?: Map<number, number>
+  dictionary: Array<{ en: string; zh: string }>
 ): Promise<Map<number, string>> {
   const dictLines =
     dictionary.length > 0
@@ -126,26 +164,18 @@ async function translateBatch(
       ? `\n【术语表】以下左侧英文在对应字幕行中出现时，译文中必须使用右侧给定形式（逐字一致，不得改用近义词、音译或其它英文写法）：\n${dictLines}\n`
       : ''
 
-  const cueItems = cues.map((cue) => {
-    const budget = maxCharsPerCue?.get(cue.id)
-    return {
-      id: cue.id,
-      text: cue.text,
-      ...(budget ? { max_chars: budget } : {}),
-    }
-  })
-
   const systemPrompt = `你是专业的英中字幕翻译员。将每条英文字幕翻译为自然流畅的中文。
 ${dictText}
 要求：
 1. 保持原意，口语化；若存在术语表，凡原文出现该英文术语，译文中对应位置必须使用表中右侧写法
 2. 如果提供了 max_chars，该条译文字符数必须不超过 max_chars
-3. 不要添加原文没有的内容
-4. 仅输出 JSON：{"translations": [{"id": <number>, "text": "<中文>"}]}`
+3. 优先保留完整句意、动作关系和连接词，不要把句子压缩成只剩关键词
+4. 不要添加原文没有的内容
+5. 仅输出 JSON：{"translations": [{"id": <number>, "text": "<中文>"}]}`
 
   const userPrompt =
     (dictLines.length > 0 ? `术语表必须遵守（见 system）。\n待译条目：\n` : '') +
-    JSON.stringify(cueItems)
+    JSON.stringify(items)
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
@@ -187,9 +217,9 @@ ${dictText}
         result.set(item.id, item.text)
       }
 
-      for (const cue of cues) {
-        if (!result.has(cue.id)) {
-          result.set(cue.id, cue.text)
+      for (const item of items) {
+        if (!result.has(item.id)) {
+          result.set(item.id, item.text)
         }
       }
 
@@ -222,7 +252,7 @@ export async function compressTranslation(
           messages: [
             {
               role: 'system',
-              content: `将以下中文文本压缩到不超过 ${targetChars} 个字，保留核心语义。输出 JSON: {"text": "<压缩后文本>"}`,
+              content: `将以下中文文本压缩到不超过 ${targetChars} 个字，要求适合中文配音口播：保留完整句意、主谓宾和必要连接词，允许更简洁，但不要压缩成关键词列表。输出 JSON: {"text": "<压缩后文本>"}`,
             },
             { role: 'user', content: text },
           ],

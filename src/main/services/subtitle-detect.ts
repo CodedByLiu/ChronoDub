@@ -15,9 +15,9 @@ function normalizeLessonKey(s: string): string {
     .toLowerCase()
 }
 
-/** 去掉 .en / .zh-CN 等语言后缀（在 .srt 之前那一节） */
+/** 去掉 .en / _en / -zh-CN 等语言后缀（在 .srt 之前那一节） */
 function stripTrailingLangTag(nameWithoutSubExt: string): string {
-  return nameWithoutSubExt.replace(/\.([a-z]{2}(-[a-zA-Z0-9]{2,8})?)$/i, '')
+  return nameWithoutSubExt.replace(/[._-]([a-z]{2}(?:-[a-zA-Z0-9]{2,8})?)$/i, '')
 }
 
 function subtitleBaseName(filename: string): string {
@@ -33,7 +33,10 @@ export function detectSubtitleForVideo(videoPath: string): string | null {
     if (existsSync(exact)) return exact
   }
 
-  const pattern = new RegExp(`^${escapeRegex(stem)}(\\.[a-zA-Z0-9_-]+)?\\.(srt|vtt|ass)$`, 'i')
+  const pattern = new RegExp(
+    `^${escapeRegex(stem)}(?:[._-][a-zA-Z0-9-]+)?\\.(srt|vtt|ass)$`,
+    'i'
+  )
 
   let names: string[]
   try {

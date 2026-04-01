@@ -123,5 +123,5 @@ async function synthesizeWithRetry(
 
 export async function synthesizeToBuffer(text: string, voice: string): Promise<ArrayBuffer> {
   const buf = await synthesize(text, voice)
-  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer
 }
