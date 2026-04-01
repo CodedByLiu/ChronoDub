@@ -1,76 +1,119 @@
-# ChronoDub
+﻿# ChronoDub
 
-[English](./README.md) | [简体中文](./README.zh-CN.md)
+一个面向英文字幕视频的中文字幕与中文配音桌面应用。English version: [README.md](./README.md)
 
 <p align="left">
   <img src="./src/renderer/public/logo.png" alt="ChronoDub Logo" width="180" />
 </p>
 
-ChronoDub 是一个桌面应用（Electron + React + TypeScript），用于根据英文视频与字幕文件生成中文字幕配音。
-
-它使用 DeepSeek 翻译字幕，使用 Edge TTS 合成中文语音，并通过 FFmpeg 将配音音轨封装回原视频。
-
-## 界面预览
-
 <p align="left">
   <img src="./docs/image.png" alt="ChronoDub 界面截图" width="960" />
 </p>
 
+## 项目简介
+
+ChronoDub 把字幕解析、DeepSeek 翻译、Edge TTS 合成和 FFmpeg 封装整合进同一套 Electron 工作流。
+
+它围绕几条实际配音约束来设计：
+
+- 字幕时间线保持不变
+- 配音尽量落在当前字幕窗口内
+- 相邻语音片段不重叠
+- 在保证专业含义的前提下，让中文讲解听起来更自然
+
+这使它尤其适合教程视频、技术讲解视频，以及其他对术语准确度和时间同步都有要求的内容。
+
 ## 功能特性
 
-- 支持批量导入视频。
-- 自动检测或手动选择字幕文件。
-- 支持 `SRT`、`VTT`、`ASS/SSA` 字幕解析。
-- 基于 DeepSeek 的英译中字幕翻译。
-- 支持术语词典（固定翻译）。
-- Edge TTS 中文音色合成（含试听）。
-- 合成前字幕审校：
-  - `自动模式`：倒计时后继续。
-  - `手动模式`：手动确认后继续。
-- 支持任务暂停 / 继续 / 取消。
-- 支持任务快照持久化，应用重启或休眠后可恢复。
-- 输出内容包括：
-  - 配音后视频
-  - 中文字幕 `.srt`
+- 支持批量导入同一目录下的多个视频。
+- 支持自动识别同名字幕，例如 `video.srt`、`video.en.srt`、`video_en.srt`、`video-en.srt`。
+- 支持解析 `SRT`、`VTT`、`ASS/SSA` 字幕。
+- 使用 DeepSeek 进行 segment 级英译中翻译。
+- 支持术语稳定控制，并可在配音前复核和修改中文字幕。
+- 使用 Edge TTS 生成中文配音，并支持应用内试听音色。
+- 对已生成语音测量真实时长，并在超窗时执行时长安全回退策略。
+- 支持任务暂停、继续、取消，以及重启或睡眠后的恢复。
+- 输出配音后的视频和生成后的中文字幕文件。
 
-## 处理流程
+## 工作流程
 
-1. 解析字幕 cue。
-2. 分段并分配字符预算。
-3. 调用 DeepSeek 翻译。
-4. 进入审校编辑。
-5. 使用 Edge TTS 合成中文语音。
-6. 组装 WAV，并通过 FFmpeg 封装回原视频。
-7. 导出配音视频与中文字幕。
+ChronoDub 把字幕时间戳当作硬锚点来组织整条流水线。
+
+1. 导入视频并自动识别匹配字幕。
+2. 解析字幕并把 cue 合并成更适合合成的时间段。
+3. 根据音色实测语速估算文本预算。
+4. 将每个 segment 翻译成自然、准确的中文。
+5. 在开始配音前复核或编辑中文字幕。
+6. 合成语音并测量真实时长，必要时按安全策略重试。
+7. 组装中文音轨并封装回源视频。
+
+## 架构说明
+
+```mermaid
+flowchart LR
+  UI[Renderer UI]
+  IPC[Preload IPC Bridge]
+  PIPE[Pipeline Orchestrator]
+  SUB[Subtitle Parser]
+  DS[DeepSeek Translation]
+  TTS[Edge TTS]
+  AUD[Audio Processor]
+  FFMPEG[FFmpeg Muxing]
+
+  UI --> IPC
+  IPC --> PIPE
+  PIPE --> SUB
+  PIPE --> DS
+  PIPE --> TTS
+  PIPE --> AUD
+  PIPE --> FFMPEG
+```
+
+应用主要分为三部分：
+
+- `renderer`：React 前端界面，负责任务管理、字幕复核和配置。
+- `preload`：向渲染进程暴露安全 IPC 能力的桥接层。
+- `main`：Electron 主进程服务，负责字幕、翻译、TTS、时长控制、任务持久化和 FFmpeg 编排。
 
 ## 技术栈
 
-- Electron + electron-vite
+- Electron + `electron-vite`
 - React 19 + TypeScript
 - Zustand
 - Tailwind CSS + Radix UI
 - DeepSeek API
-- node-edge-tts
+- `node-edge-tts`
 - FFmpeg / FFprobe
 
 ## 环境要求
 
-- Node.js 20+（推荐）
-- npm
-- FFmpeg / FFprobe 可用：
-  - 开发环境：系统 `PATH` 中可找到
-  - 打包环境：可放到 `resources/bin`
-- 有效的 DeepSeek API Key
-- 可访问外网（DeepSeek + Edge TTS）
+运行 ChronoDub 前，请确认你具备：
 
-## 快速开始
+- Node.js 20 及以上版本
+- npm
+- `ffmpeg` 与 `ffprobe`
+  - 开发环境下可直接从系统 `PATH` 访问
+  - 打包环境下可放在 `resources/bin`
+- 有效的 DeepSeek API Key
+- 可访问 DeepSeek 与 Edge TTS 的网络环境
+
+## 安装与运行
+
+### 从源码启动
 
 ```bash
+git clone https://github.com/CodedByLiu/ChronoDub.git
+cd ChronoDub
 npm install
+```
+
+### 启动开发环境
+
+```bash
 npm run dev
 ```
 
-构建产物：
+### 构建生产产物
 
 ```bash
 npm run build
@@ -78,78 +121,96 @@ npm run build
 
 ## 打包
 
-macOS 打包：
+构建当前平台的可分发安装包：
+
+```bash
+npm run dist
+```
+
+平台专项命令：
 
 ```bash
 npm run dist:mac
-```
-
-Windows 打包：
-
-```bash
 npm run dist:win
-```
-
-Linux 打包：
-
-```bash
 npm run dist:linux
 ```
 
-打包输出目录：
+构建产物输出到：
 
 ```text
 release/<version>/
 ```
 
-## 可用脚本
+## 常用脚本
 
-- `npm run dev` - 启动 Electron + 渲染进程开发环境
-- `npm run build` - 构建 main / preload / renderer
-- `npm run lint` - 执行 ESLint
-- `npm run lint:fix` - ESLint 自动修复
-- `npm run format` - Prettier 写入格式化
-- `npm run format:check` - Prettier 检查
-- `npm run dist` - 构建并使用 electron-builder 打包
-- `npm run dist:mac` - 打包 macOS（zip）
-- `npm run dist:win` - 打包 Windows（nsis）
-- `npm run dist:linux` - 打包 Linux（AppImage）
+```bash
+# 启动 Electron 开发环境
+npm run dev
+
+# 构建 main、preload、renderer
+npm run build
+
+# 本地预览生产构建
+npm run preview
+
+# 运行 ESLint
+npm run lint
+
+# 自动修复 ESLint 问题
+npm run lint:fix
+
+# 使用 Prettier 格式化仓库
+npm run format
+
+# 检查格式
+npm run format:check
+
+# 构建并打包应用
+npm run dist
+```
 
 ## 输出结构
 
-输入视频例如 `MyVideo.mp4`，输出目录结构为：
+如果输入视频名为 `MyVideo.mp4`，则 ChronoDub 输出：
 
 ```text
 <outputDir>/MyVideo/
-  ├─ MyVideo.mp4    # 配音后视频
-  └─ MyVideo.srt    # 生成的中文字幕
+  MyVideo.mp4
+  MyVideo.srt
 ```
 
 ## 项目结构
 
 ```text
 src/
-  main/         # Electron 主进程、pipeline、ffmpeg/deepseek/tts 服务
-  preload/      # IPC 桥接
-  components/   # React 组件
-  stores/       # Zustand 状态管理
-  renderer/     # 渲染进程入口与静态资源
+├─ components/   React 界面组件
+├─ hooks/        前端 hooks
+├─ lib/          前端工具函数
+├─ main/         Electron 主进程及后端服务
+├─ preload/      IPC 桥接层
+├─ renderer/     渲染进程入口和静态资源
+├─ stores/       Zustand 状态管理
+└─ types/        共享类型定义
+docs/
+├─ chronodub.md  研究与架构说明
+└─ image.png     应用截图
 scripts/
-  generate-mac-icon.sh
-  generate-win-icon.mjs
+├─ generate-mac-icon.sh
+└─ generate-win-icon.mjs
 ```
 
-## 常见问题
+## 故障排查
 
-- 打包后图标不对：确认打包前已执行图标生成脚本。
-- 音视频封装失败：确认 `ffmpeg` 与 `ffprobe` 可用。
-- 翻译失败：检查 DeepSeek Key 与网络连接。
-- 系统休眠后任务暂停：在任务表点击“继续”即可。
+- 如果字幕自动识别失败，请确认字幕文件和视频位于同一目录，并使用受支持的命名方式。
+- 如果翻译失败，请确认 DeepSeek API Key 和接口连通性正常。
+- 如果 TTS 合成失败，请先检查网络环境，并在应用内测试音色是否可用。
+- 如果封装失败，请确认 `ffmpeg` 与 `ffprobe` 已正确安装并可访问。
+- 如果任务被系统睡眠中断，可在重新打开应用后从任务列表继续执行。
 
-## 贡献
+## 参与贡献
 
-欢迎提交 Issue 和 PR。
+欢迎提交 Issue 和 Pull Request。
 
 ## 许可证
 
-当前仓库尚未提供 License 文件。
+当前仓库暂未提供许可证文件。
