@@ -12,10 +12,14 @@ const FADE_MS = 10
 const FADE_SAMPLES = Math.round((FADE_MS / 1000) * SR)
 const MARGIN_SEC = 0.15
 const CPS_SAFETY_FACTOR = 0.9
-const MAX_FALLBACK_ROUNDS = 3
 const MAX_RETRIES_PER_LEVEL = 2
+const SLIGHT_RATE_STEPS = ['+4%', '+6%', '+8%'] as const
+const MAX_SLIGHT_RATE_OVERRUN = 1.18
+const HIGH_RISK_WINDOW_US = 1_800_000
+const MEDIUM_RISK_WINDOW_US = 2_800_000
 
 const STRONG_TERMINALS = /[.?!…。？！]+$/
+const TECH_TOKEN_RE = /\b(?:[A-Z][A-Za-z0-9_]*|[A-Za-z]+(?:[./#_-][A-Za-z0-9_]+)+|[A-Za-z]+\d+)\b/g
 
 // ─── 4.1 时间窗构建 ──────────────────────────────
 
@@ -209,53 +213,141 @@ export interface FallbackContext {
   windowUs: MicrosecondTimestamp
   voice: string
   apiKey: string
+  risk: SegmentRisk
   segmentIndex: number
   segments: AssemblerSegment[]
   windows: TimeWindow[]
 }
 
+export type SegmentRisk = 'low' | 'medium' | 'high'
+
+function countTechnicalTokens(text: string): number {
+  return text.match(TECH_TOKEN_RE)?.length ?? 0
+}
+
+export function classifySegmentRisk(
+  segment: Pick<Segment, 'textEn' | 'cueIds'>,
+  windowUs: MicrosecondTimestamp
+): SegmentRisk {
+  let score = 0
+  const windowSec = windowUs / 1_000_000
+  const charsPerSec = segment.textEn.length / Math.max(windowSec, 0.1)
+  const technicalTokens = countTechnicalTokens(segment.textEn)
+
+  if (windowUs <= HIGH_RISK_WINDOW_US) score += 3
+  else if (windowUs <= MEDIUM_RISK_WINDOW_US) score += 2
+  else if (windowUs <= 4_000_000) score += 1
+
+  if (charsPerSec >= 18) score += 2
+  else if (charsPerSec >= 12) score += 1
+
+  if (technicalTokens >= 4) score += 2
+  else if (technicalTokens >= 2) score += 1
+
+  if (segment.cueIds.length >= 4) score += 1
+
+  if (score >= 5) return 'high'
+  if (score >= 3) return 'medium'
+  return 'low'
+}
+
 export async function synthesizeWithFallback(ctx: FallbackContext): Promise<ProcessedAudio> {
-  let currentText = ctx.text
-  const windowSec = ctx.windowUs / 1_000_000
+  let bestResult = await synthesizeProcessed(ctx.text, ctx.voice)
+  if (bestResult.durationUs <= ctx.windowUs) return bestResult
 
-  for (let round = 0; round < MAX_FALLBACK_ROUNDS; round++) {
-    const mp3 = await synthesize(currentText, ctx.voice)
-    const result = await processAudio(mp3)
+  const originalOverRatio = bestResult.durationUs / ctx.windowUs
 
-    if (result.durationUs <= ctx.windowUs) {
-      return result
+  // Level 1: for slight overruns, prefer a tiny TTS rate bump over rewriting the text.
+  if (originalOverRatio <= MAX_SLIGHT_RATE_OVERRUN) {
+    const rateFit = await trySlightRateFallback(ctx.text, ctx.voice, ctx.windowUs, originalOverRatio)
+    if (rateFit.result) return rateFit.result
+    if (rateFit.bestResult.durationUs < bestResult.durationUs) {
+      bestResult = rateFit.bestResult
     }
-
-    const overRatio = result.durationUs / ctx.windowUs
-
-    // Level 1: 语义压缩重译
-    if (round === 0) {
-      const targetChars = Math.max(2, Math.floor((currentText.length / overRatio) * 0.85))
-      let compressed = currentText
-      for (let retry = 0; retry < MAX_RETRIES_PER_LEVEL; retry++) {
-        compressed = await compressTranslation(currentText, targetChars - retry, ctx.apiKey)
-        const mp3c = await synthesize(compressed, ctx.voice)
-        const rc = await processAudio(mp3c)
-        if (rc.durationUs <= ctx.windowUs) return rc
-      }
-      currentText = compressed
-      continue
-    }
-
-    // Level 2: 句子拆分
-    if (round === 1) {
-      const splitResult = trySplitToAdjacentWindows(ctx, currentText)
-      if (splitResult) return splitResult
-      continue
-    }
-
-    // Level 3: 终极降级 - 硬裁剪 + 淡出
-    return hardClip(result, ctx.windowUs)
   }
 
-  const mp3 = await synthesize(currentText, ctx.voice)
-  const result = await processAudio(mp3)
-  return result.durationUs <= ctx.windowUs ? result : hardClip(result, ctx.windowUs)
+  // Level 2: tighten the sentence while preserving technical meaning.
+  const targetChars = Math.max(
+    2,
+    Math.floor((ctx.text.length / originalOverRatio) * getCompressionFactor(ctx.risk))
+  )
+  let compressed = ctx.text
+
+  for (let retry = 0; retry < MAX_RETRIES_PER_LEVEL; retry++) {
+    compressed = await compressTranslation(ctx.text, targetChars - retry, ctx.apiKey)
+    const compressedResult = await synthesizeProcessed(compressed, ctx.voice)
+    if (compressedResult.durationUs <= ctx.windowUs) return compressedResult
+    if (compressedResult.durationUs < bestResult.durationUs) {
+      bestResult = compressedResult
+    }
+
+    const compressedOverRatio = compressedResult.durationUs / ctx.windowUs
+    if (compressedOverRatio <= MAX_SLIGHT_RATE_OVERRUN) {
+      const rateFit = await trySlightRateFallback(
+        compressed,
+        ctx.voice,
+        ctx.windowUs,
+        compressedOverRatio
+      )
+      if (rateFit.result) return rateFit.result
+      if (rateFit.bestResult.durationUs < bestResult.durationUs) {
+        bestResult = rateFit.bestResult
+      }
+    }
+  }
+
+  // Level 3: sentence splitting is still not wired through the pipeline.
+  const splitResult = trySplitToAdjacentWindows(ctx, compressed)
+  if (splitResult) return splitResult
+
+  // Final safety net: keep the timeline strict even if quality must degrade.
+  return hardClip(bestResult, ctx.windowUs)
+}
+
+async function synthesizeProcessed(
+  text: string,
+  voice: string,
+  rate = 'default'
+): Promise<ProcessedAudio> {
+  const mp3 = await synthesize(text, voice, rate)
+  return processAudio(mp3)
+}
+
+function getSlightRateCandidates(overRatio: number): readonly string[] {
+  if (overRatio <= 1.04) return SLIGHT_RATE_STEPS.slice(0, 1)
+  if (overRatio <= 1.08) return SLIGHT_RATE_STEPS.slice(0, 2)
+  return SLIGHT_RATE_STEPS
+}
+
+function getCompressionFactor(risk: SegmentRisk): number {
+  if (risk === 'high') return 0.84
+  if (risk === 'medium') return 0.87
+  return 0.9
+}
+
+async function trySlightRateFallback(
+  text: string,
+  voice: string,
+  windowUs: MicrosecondTimestamp,
+  overRatio: number
+): Promise<{ result: ProcessedAudio | null; bestResult: ProcessedAudio }> {
+  const candidates = getSlightRateCandidates(overRatio)
+  let bestResult = await synthesizeProcessed(text, voice, candidates[0])
+  if (bestResult.durationUs <= windowUs) {
+    return { result: bestResult, bestResult }
+  }
+
+  for (const rate of candidates.slice(1)) {
+    const result = await synthesizeProcessed(text, voice, rate)
+    if (result.durationUs < bestResult.durationUs) {
+      bestResult = result
+    }
+    if (result.durationUs <= windowUs) {
+      return { result, bestResult: result }
+    }
+  }
+
+  return { result: null, bestResult }
 }
 
 function trySplitToAdjacentWindows(ctx: FallbackContext, text: string): ProcessedAudio | null {

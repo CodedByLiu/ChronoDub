@@ -10,10 +10,12 @@ import {
   buildTimeWindows,
   calibrateCPS,
   assignBudgets,
+  classifySegmentRisk,
   synthesizeWithFallback,
   assembleToWav,
   type AssemblerSegment,
   type FallbackContext,
+  type SegmentRisk,
 } from './audio-processor'
 import { tmpdir } from 'os'
 import { loadTaskSnapshots } from '../task-store'
@@ -236,6 +238,15 @@ function joinCueTextsForSpeech(parts: string[]): string {
   return text
 }
 
+function computeSegmentTranslationBudget(windowBudget: number, risk: SegmentRisk): number {
+  // The window budget already includes a safety factor. Give the translator a small
+  // amount of room so natural Chinese does not get compressed too early.
+  const slackRatio = risk === 'high' ? 0.02 : risk === 'medium' ? 0.05 : 0.1
+  const maxSlack = risk === 'high' ? 2 : risk === 'medium' ? 4 : 6
+  const slack = Math.min(maxSlack, Math.max(1, Math.ceil(windowBudget * slackRatio)))
+  return Math.max(1, windowBudget + slack)
+}
+
 // ─── Public API for IPC handlers ────────────────
 
 export function saveReviewCues(taskId: string, cues: Cue[]): void {
@@ -366,12 +377,18 @@ export async function runPipeline(
 
     // Step 5: Assign budgets
     assignBudgets(windows, cps)
+    const segmentRiskMap = new Map<number, SegmentRisk>()
+    for (const w of windows) {
+      const seg = segments[w.segmentId]
+      segmentRiskMap.set(seg.id, classifySegmentRisk(seg, w.windowUs))
+    }
 
     // Step 6: Translate with DeepSeek at segment granularity
     reportProgress(taskId, 'translating', 20)
     const segmentBudgetMap = new Map<number, number>()
     for (const w of windows) {
-      segmentBudgetMap.set(w.segmentId, Math.max(1, w.budgetChars))
+      const risk = segmentRiskMap.get(w.segmentId) ?? 'medium'
+      segmentBudgetMap.set(w.segmentId, computeSegmentTranslationBudget(w.budgetChars, risk))
     }
 
     const translations = await translateSegments(
@@ -455,6 +472,7 @@ export async function runPipeline(
         windowUs: win.windowUs,
         voice: config.selectedVoice,
         apiKey: config.deepseekKey,
+        risk: segmentRiskMap.get(seg.id) ?? 'medium',
         segmentIndex: i,
         segments: assemblerSegments,
         windows,
