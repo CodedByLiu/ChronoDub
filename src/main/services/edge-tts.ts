@@ -75,6 +75,9 @@ export async function synthesize(
   volume = 'default',
   pitch = 'default'
 ): Promise<Buffer> {
+  if (!voice?.trim()) {
+    throw new Error('未选择 TTS 声音')
+  }
   return limit(() => synthesizeWithRetry(text, voice, rate, volume, pitch))
 }
 

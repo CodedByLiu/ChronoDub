@@ -25,10 +25,20 @@ const TIME_CLS =
 const TEXT_BLOCK = 'min-w-0 flex-1 text-sm leading-6'
 
 export function SubtitleEditor() {
-  const { editingTaskId, tasks, config, setEditingTaskId, updateTaskChineseCues } = useAppStore()
+  const {
+    editingTaskId,
+    tasks,
+    taskCues,
+    config,
+    setEditingTaskId,
+    updateTaskCues,
+    updateTaskChineseCues,
+  } = useAppStore()
 
   const task = tasks.find((t) => t.id === editingTaskId)
+  const cueState = editingTaskId ? taskCues[editingTaskId] : undefined
   const [localCues, setLocalCues] = useState<Cue[]>([])
+  const [loadingCues, setLoadingCues] = useState(false)
 
   const leftScrollRef = useRef<HTMLDivElement>(null)
   const rightScrollRef = useRef<HTMLDivElement>(null)
@@ -43,15 +53,38 @@ export function SubtitleEditor() {
   useEffect(() => {
     if (!editingTaskId) {
       setLocalCues([])
+      setLoadingCues(false)
       return
     }
     setLocalCues([])
   }, [editingTaskId])
 
   useEffect(() => {
-    if (!editingTaskId || !task?.chineseCues?.length) return
-    setLocalCues((prev) => (prev.length === 0 ? task.chineseCues!.map((c) => ({ ...c })) : prev))
-  }, [editingTaskId, task?.chineseCues])
+    if (!editingTaskId) return
+    if (cueState?.englishCues?.length || cueState?.chineseCues?.length) return
+
+    let cancelled = false
+    setLoadingCues(true)
+
+    window.api?.task
+      .loadCues(editingTaskId)
+      .then((loaded) => {
+        if (cancelled || !loaded) return
+        updateTaskCues(editingTaskId, loaded.englishCues, loaded.chineseCues)
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCues(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [editingTaskId, cueState?.englishCues, cueState?.chineseCues, updateTaskCues])
+
+  useEffect(() => {
+    if (!editingTaskId || !cueState?.chineseCues?.length) return
+    setLocalCues((prev) => (prev.length === 0 ? cueState.chineseCues!.map((c) => ({ ...c })) : prev))
+  }, [editingTaskId, cueState?.chineseCues])
 
   useEffect(() => {
     if (
@@ -103,7 +136,7 @@ export function SubtitleEditor() {
 
   if (!task) return null
 
-  const englishCues = task.englishCues || []
+  const englishCues = cueState?.englishCues || []
   const rowCount = Math.max(englishCues.length, localCues.length)
 
   return (
@@ -152,6 +185,16 @@ export function SubtitleEditor() {
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 gap-6">
+          {loadingCues && rowCount === 0 ? (
+            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+              正在加载字幕...
+            </div>
+          ) : rowCount === 0 ? (
+            <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+              当前任务没有可显示的中英字幕数据
+            </div>
+          ) : (
+            <>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="mb-2 shrink-0 px-1 text-sm font-medium text-muted-foreground">
               英文字幕
@@ -228,6 +271,8 @@ export function SubtitleEditor() {
               </div>
             </div>
           </div>
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>

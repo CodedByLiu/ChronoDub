@@ -8,9 +8,8 @@ import { VideoTable } from './components/VideoTable'
 import { SubtitleEditor } from './components/SubtitleEditor'
 
 export default function App() {
-  const { config, tasks, sidebarOpen, loadConfig, setTasks } = useAppStore()
+  const { config, sidebarOpen, loadConfig, setTasks } = useAppStore()
   const configLoaded = useRef(false)
-  const tasksLoaded = useRef(false)
 
   useIpcListeners()
 
@@ -36,11 +35,6 @@ export default function App() {
             setTasks(saved)
           }
         })
-        .finally(() => {
-          tasksLoaded.current = true
-        })
-    } else {
-      tasksLoaded.current = true
     }
   }, [loadConfig, setTasks])
 
@@ -52,14 +46,6 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [config])
 
-  useEffect(() => {
-    if (!tasksLoaded.current) return
-    const timer = setTimeout(() => {
-      window.api?.task.saveSnapshot(tasks)
-    }, 500)
-    return () => clearTimeout(timer)
-  }, [tasks])
-
   return (
     <TooltipProvider>
       <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground antialiased">
@@ -70,7 +56,7 @@ export default function App() {
           <ConfigPanel />
         </div>
 
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex min-h-0 flex-col min-w-0">
           <ActionBar />
           <VideoTable />
         </div>

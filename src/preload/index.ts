@@ -30,8 +30,15 @@ const api: IpcApi = {
   },
   task: {
     loadSnapshot: () => ipcRenderer.invoke('task:load-snapshot'),
-    saveSnapshot: (tasks) => ipcRenderer.invoke('task:save-snapshot', tasks),
+    loadCues: (taskId) => ipcRenderer.invoke('task:load-cues', taskId),
+    register: (tasks) => ipcRenderer.send('task:register', tasks),
+    updateSubtitlePath: (taskId, subtitlePath) =>
+      ipcRenderer.send('task:update-subtitle-path', taskId, subtitlePath),
+    replaceSubtitlePath: (taskId, subtitlePath) =>
+      ipcRenderer.send('task:replace-subtitle-path', taskId, subtitlePath),
     start: (tasks) => ipcRenderer.send('task:start', tasks),
+    pauseAll: () => ipcRenderer.send('task:pause-all'),
+    resumeAll: (taskIds) => ipcRenderer.send('task:resume-all', taskIds),
     pause: (taskId) => ipcRenderer.send('task:pause', taskId),
     resume: (taskId) => ipcRenderer.send('task:resume', taskId),
     cancel: (taskId) => ipcRenderer.send('task:cancel', taskId),
@@ -43,8 +50,9 @@ const api: IpcApi = {
         _event: Electron.IpcRendererEvent,
         taskId: string,
         status: string,
-        progress: number
-      ) => callback(taskId, status as any, progress)
+        progress: number,
+        detail?: string
+      ) => callback(taskId, status as any, progress, detail)
       ipcRenderer.on('task:progress', handler)
       return () => ipcRenderer.removeListener('task:progress', handler)
     },

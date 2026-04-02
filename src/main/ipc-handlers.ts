@@ -1,18 +1,29 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { existsSync } from 'fs'
-import { loadConfig, saveConfig } from './config-store'
+import { loadConfig, loadConfigSync, saveConfig } from './config-store'
 import { parseSubtitleFile, saveSubtitleFile } from './services/subtitle-parser'
 import { detectSubtitleForVideo } from './services/subtitle-detect'
 import { getChineseVoices, synthesizeToBuffer } from './services/edge-tts'
-import { loadTaskSnapshots, normalizeInterruptedTasks, saveTaskSnapshots } from './task-store'
+import { deleteTaskCues, loadTaskCues } from './task-cue-store'
+import {
+  getTaskSnapshots,
+  registerTasks,
+  replaceTaskSubtitlePathSnapshot,
+  removeTaskSnapshot,
+  removeTaskSnapshots,
+  updateTaskSubtitlePathSnapshot,
+} from './task-registry'
 import {
   startTasks,
   pauseTask,
   resumeTask,
+  resumeAllTasks,
+  updateConcurrentPipelineLimit,
   cancelTask,
   cancelAllTasks,
   saveReviewCues,
   confirmReview,
+  pauseAllActiveTasks,
 } from './services/pipeline'
 import type { AppConfig, Cue, TaskStartInfo, VideoTask } from '../types'
 
@@ -28,7 +39,7 @@ const INVOKE_CHANNELS = [
   'subtitle:parse',
   'subtitle:save',
   'task:load-snapshot',
-  'task:save-snapshot',
+  'task:load-cues',
 ] as const
 
 function removeInvokeHandlers(): void {
@@ -49,7 +60,8 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('config:save', async (_event, config: AppConfig) => {
-    saveConfig(config)
+    await saveConfig(config)
+    updateConcurrentPipelineLimit(config)
   })
 
   ipcMain.handle('dialog:open-videos', async () => {
@@ -113,26 +125,34 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('task:load-snapshot', async () => {
-    const tasks = loadTaskSnapshots()
-    const normalized = normalizeInterruptedTasks(tasks)
-    if (normalized.length !== tasks.length) {
-      saveTaskSnapshots(normalized)
-      return normalized
-    }
-    const statusChanged = normalized.some((task, i) => task.status !== tasks[i]?.status)
-    if (statusChanged) {
-      saveTaskSnapshots(normalized)
-    }
-    return normalized
+    return getTaskSnapshots()
   })
 
-  ipcMain.handle('task:save-snapshot', async (_event, tasks: VideoTask[]) => {
-    if (!Array.isArray(tasks)) return
-    saveTaskSnapshots(tasks)
+  ipcMain.handle('task:load-cues', async (_event, taskId: string) => {
+    if (typeof taskId !== 'string' || !taskId.trim()) return null
+    return loadTaskCues(taskId)
+  })
+
+  ipcMain.on('task:register', (_event, tasks: VideoTask[]) => {
+    if (!Array.isArray(tasks) || tasks.length === 0) return
+    registerTasks(tasks)
+  })
+
+  ipcMain.on('task:update-subtitle-path', (_event, taskId: string, subtitlePath: string) => {
+    if (typeof taskId !== 'string' || !taskId.trim()) return
+    if (typeof subtitlePath !== 'string' || !subtitlePath.trim()) return
+    updateTaskSubtitlePathSnapshot(taskId, subtitlePath)
+  })
+
+  ipcMain.on('task:replace-subtitle-path', (_event, taskId: string, subtitlePath: string) => {
+    if (typeof taskId !== 'string' || !taskId.trim()) return
+    if (typeof subtitlePath !== 'string' || !subtitlePath.trim()) return
+    replaceTaskSubtitlePathSnapshot(taskId, subtitlePath)
+    void deleteTaskCues(taskId)
   })
 
   ipcMain.on('task:start', (_event, taskInfos: TaskStartInfo[]) => {
-    const config = loadConfig()
+    const config = loadConfigSync()
     const taskIds = taskInfos.map((t) => t.id)
     const tasks = taskInfos.map((t) => ({
       videoPath: t.videoPath,
@@ -145,24 +165,35 @@ export function registerIpcHandlers(): void {
     pauseTask(taskId)
   })
 
+  ipcMain.on('task:pause-all', () => {
+    pauseAllActiveTasks()
+  })
+
   ipcMain.on('task:cancel', (_event, taskId: string) => {
     cancelTask(taskId)
+    removeTaskSnapshot(taskId)
   })
 
   ipcMain.on('task:cancel-all', (_event, taskIds: string[]) => {
-    cancelAllTasks(Array.isArray(taskIds) ? taskIds : [])
+    const ids = Array.isArray(taskIds) ? taskIds : []
+    cancelAllTasks(ids)
+    removeTaskSnapshots(ids)
   })
 
   ipcMain.on('task:save-review', (_event, taskId: string, cues: Cue[]) => {
-    saveReviewCues(taskId, cues)
+    void saveReviewCues(taskId, cues)
   })
 
   ipcMain.on('task:confirm-review', (_event, taskId: string, cues: Cue[]) => {
-    confirmReview(taskId, cues)
+    void confirmReview(taskId, cues)
   })
 
   ipcMain.on('task:resume', (_event, taskId: string) => {
-    resumeTask(taskId, loadConfig())
+    resumeTask(taskId, loadConfigSync())
+  })
+
+  ipcMain.on('task:resume-all', (_event, taskIds: string[]) => {
+    resumeAllTasks(Array.isArray(taskIds) ? taskIds : [], loadConfigSync())
   })
 }
 

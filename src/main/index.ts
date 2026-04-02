@@ -5,7 +5,7 @@ import { is } from '@electron-toolkit/utils'
 import { registerIpcHandlers } from './ipc-handlers'
 import { testDeepseekConnection } from './services/deepseek'
 import { pauseAllActiveTasks } from './services/pipeline'
-import { loadTaskSnapshots, normalizeInterruptedTasks, saveTaskSnapshots } from './task-store'
+import { normalizeInterruptedTaskSnapshots } from './task-registry'
 
 app.setName('ChronoDub')
 
@@ -36,6 +36,7 @@ function createWindow(): void {
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: false,
     },
   })
 
@@ -71,9 +72,7 @@ app.whenReady().then(() => {
 
   powerMonitor.on('suspend', () => {
     pauseAllActiveTasks()
-    const tasks = loadTaskSnapshots()
-    if (tasks.length === 0) return
-    saveTaskSnapshots(normalizeInterruptedTasks(tasks))
+    normalizeInterruptedTaskSnapshots()
   })
 
   app.on('activate', () => {

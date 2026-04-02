@@ -5,8 +5,8 @@ export function useIpcListeners() {
   const { updateTaskStatus, updateTaskCountdown, updateTaskCues, updateTaskError } = useAppStore()
 
   useEffect(() => {
-    const unsubProgress = window.api?.task.onProgress((taskId, status, progress) => {
-      updateTaskStatus(taskId, status, progress)
+    const unsubProgress = window.api?.task.onProgress((taskId, status, progress, detail) => {
+      updateTaskStatus(taskId, status, progress, detail)
     })
 
     const unsubCountdown = window.api?.task.onReviewCountdown((taskId, remaining) => {

@@ -20,7 +20,8 @@ import {
   FlaskConical,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
-import type { ReviewMode } from '../types'
+import { CONCURRENCY_OPTIONS } from '../types'
+import type { ConcurrencyOption, ReviewMode } from '../types'
 
 interface Voice {
   name: string
@@ -49,6 +50,13 @@ const VOICE_CN_NAMES: Record<string, string> = {
   'zh-CN-YunzeNeural': '云泽',
   'zh-CN-liaoning-XiaobeiNeural': '晓北(辽宁)',
   'zh-CN-shaanxi-XiaoniNeural': '晓妮(陕西)',
+}
+
+const CONCURRENCY_LABELS: Record<ConcurrencyOption, string> = {
+  2: '2 个任务，同时处理更稳',
+  4: '4 个任务，均衡速度和占用',
+  6: '6 个任务，适合较高配置',
+  8: '8 个任务，仅建议高配机器',
 }
 
 export function ConfigPanel() {
@@ -350,6 +358,32 @@ export function ConfigPanel() {
               </Button>
             </div>
             {testError && <p className="text-xs text-red-400">{testError}</p>}
+          </div>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <Label>同时处理视频数</Label>
+            <Select
+              value={String(config.maxConcurrentTasks)}
+              onValueChange={(value) =>
+                setConfig({ maxConcurrentTasks: Number(value) as ConcurrencyOption })
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="选择并发数" />
+              </SelectTrigger>
+              <SelectContent>
+                {CONCURRENCY_OPTIONS.map((value) => (
+                  <SelectItem key={value} value={String(value)}>
+                    {CONCURRENCY_LABELS[value]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              不支持手动输入，避免设置过大导致软件卡顿或崩溃。默认推荐 2。
+            </p>
           </div>
 
           <Separator />

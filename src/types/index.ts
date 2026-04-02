@@ -2,6 +2,7 @@ export type MicrosecondTimestamp = number
 
 export type TaskStatus =
   | 'waiting'
+  | 'queued'
   | 'parsing'
   | 'translating'
   | 'reviewing'
@@ -13,6 +14,9 @@ export type TaskStatus =
   | 'paused'
 
 export type ReviewMode = 'auto' | 'manual'
+export type ConcurrencyOption = 2 | 4 | 6 | 8
+
+export const CONCURRENCY_OPTIONS: ConcurrencyOption[] = [2, 4, 6, 8]
 
 export interface Cue {
   id: number
@@ -46,6 +50,8 @@ export interface VideoTask {
   subtitlePath: string | null
   status: TaskStatus
   progress: number
+  detail?: string
+  statusUpdatedAt?: number
   countdownRemaining?: number
   error?: string
   englishCues?: Cue[]
@@ -59,6 +65,7 @@ export interface AppConfig {
   outputDir: string
   reviewMode: ReviewMode
   autoReviewCountdown: number
+  maxConcurrentTasks: ConcurrencyOption
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -68,13 +75,15 @@ export const DEFAULT_CONFIG: AppConfig = {
   outputDir: '',
   reviewMode: 'auto',
   autoReviewCountdown: 30,
+  maxConcurrentTasks: 2,
 }
 
 export const TASK_STATUS_META: Record<TaskStatus, { label: string; color: string }> = {
   waiting: { label: '等待中', color: 'gray' },
+  queued: { label: '排队中', color: 'slate' },
   parsing: { label: '解析中', color: 'blue' },
   translating: { label: '翻译中', color: 'purple' },
-  reviewing: { label: '待审校', color: 'amber' },
+  reviewing: { label: '待审核', color: 'amber' },
   synthesizing: { label: '合成中', color: 'orange' },
   assembling: { label: '装配中', color: 'cyan' },
   encoding: { label: '封装中', color: 'indigo' },
@@ -95,9 +104,7 @@ export interface DeepseekTestResult {
 }
 
 export interface IpcApi {
-  /** 顶层方法，避免嵌套 dialog 在旧 preload 中缺失 */
   openSubtitlePicker: (defaultDir?: string | null) => Promise<string | null>
-  /** 拖入文件的真实路径（preload webUtils） */
   filePathFromDragFile: (file: File) => string
   config: {
     load: () => Promise<AppConfig>
@@ -123,8 +130,13 @@ export interface IpcApi {
   }
   task: {
     loadSnapshot: () => Promise<VideoTask[]>
-    saveSnapshot: (tasks: VideoTask[]) => Promise<void>
+    loadCues: (taskId: string) => Promise<{ englishCues?: Cue[]; chineseCues?: Cue[] } | null>
+    register: (tasks: VideoTask[]) => void
+    updateSubtitlePath: (taskId: string, subtitlePath: string) => void
+    replaceSubtitlePath: (taskId: string, subtitlePath: string) => void
     start: (tasks: TaskStartInfo[]) => void
+    pauseAll: () => void
+    resumeAll: (taskIds: string[]) => void
     pause: (taskId: string) => void
     resume: (taskId: string) => void
     cancel: (taskId: string) => void
@@ -132,7 +144,7 @@ export interface IpcApi {
     saveReview: (taskId: string, cues: Cue[]) => void
     confirmReview: (taskId: string, cues: Cue[]) => void
     onProgress: (
-      callback: (taskId: string, status: TaskStatus, progress: number) => void
+      callback: (taskId: string, status: TaskStatus, progress: number, detail?: string) => void
     ) => () => void
     onReviewCountdown: (callback: (taskId: string, remaining: number) => void) => () => void
     onReviewReady: (

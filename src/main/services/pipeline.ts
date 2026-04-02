@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from 'fs'
 import { join, basename, extname } from 'path'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, powerSaveBlocker } from 'electron'
 import type { Cue, Segment, TimeWindow, AppConfig, TaskStatus } from '../../types'
 import { parseSubtitleFile, saveSubtitleFile } from './subtitle-parser'
 import { translateSegments, applyTerminologyToChinese } from './deepseek'
@@ -18,21 +18,68 @@ import {
   type SegmentRisk,
 } from './audio-processor'
 import { tmpdir } from 'os'
-import { loadTaskSnapshots } from '../task-store'
+import { deleteTaskCues, saveTaskCues } from '../task-cue-store'
+import {
+  getTaskSnapshot,
+  updateTaskCountdownSnapshot,
+  updateTaskErrorSnapshot,
+  updateTaskStatusSnapshot,
+} from '../task-registry'
+import { clearReviewCountdown, runReviewSession, type ReviewSessionState } from './review-session'
 
 // ─── Task state management ──────────────────────
 
-interface TaskState {
+interface TaskState extends ReviewSessionState {
   cancelled: boolean
-  paused: boolean
+  pauseRequested: boolean
+  currentStatus: TaskStatus
   pauseResolver: (() => void) | null
-  reviewResolver: ((cues: Cue[]) => void) | null
-  reviewRejecter: ((err: Error) => void) | null
-  chineseCues: Cue[]
-  countdownTimer: ReturnType<typeof setInterval> | null
 }
 
 const activeTasks = new Map<string, TaskState>()
+let currentConcurrentPipelineLimit = 2
+
+interface QueuedTaskEntry {
+  taskId: string
+  videoPath: string
+  subtitlePath: string
+  config: AppConfig
+}
+
+const pendingTasks: QueuedTaskEntry[] = []
+const queuedTaskIds = new Set<string>()
+const pendingResumeTaskIds: string[] = []
+const queuedResumeTaskIds = new Set<string>()
+const BLOCK_SLEEP_STATUSES = new Set<TaskStatus>([
+  'parsing',
+  'translating',
+  'synthesizing',
+  'assembling',
+  'encoding',
+])
+const LAST_WORK_STATUSES = new Set<TaskStatus>([
+  'parsing',
+  'translating',
+  'reviewing',
+  'synthesizing',
+  'assembling',
+  'encoding',
+])
+const SYNTHESIS_SEGMENT_TIMEOUT_MS = 180_000
+let sleepBlockerId: number | null = null
+
+function getConcurrentPipelineLimit(config?: AppConfig): number {
+  const value = config?.maxConcurrentTasks
+  if (value === 2 || value === 4 || value === 6 || value === 8) return value
+  return 2
+}
+
+function validateTaskConfig(config: AppConfig): string | null {
+  if (!config.selectedVoice?.trim()) return '未选择 TTS 声音，请先在配置面板中选择语音'
+  if (!config.deepseekKey?.trim()) return '未填写 DeepSeek API Key，请先在配置面板中完成配置'
+  if (!config.outputDir?.trim()) return '未选择输出目录，请先设置输出目录'
+  return null
+}
 
 function getTaskState(taskId: string): TaskState {
   let state = activeTasks.get(taskId)
@@ -40,11 +87,14 @@ function getTaskState(taskId: string): TaskState {
     state = {
       cancelled: false,
       paused: false,
+      pauseRequested: false,
+      currentStatus: 'waiting',
       pauseResolver: null,
       reviewResolver: null,
       reviewRejecter: null,
       chineseCues: [],
       countdownTimer: null,
+      countdownRemaining: null,
     }
     activeTasks.set(taskId, state)
   }
@@ -53,8 +103,107 @@ function getTaskState(taskId: string): TaskState {
 
 function cleanupTask(taskId: string): void {
   const state = activeTasks.get(taskId)
-  if (state?.countdownTimer) clearInterval(state.countdownTimer)
+  if (state) clearReviewCountdown(state)
   activeTasks.delete(taskId)
+  removeQueuedResumeTask(taskId)
+  updateSleepBlocker()
+}
+
+function updateSleepBlocker(): void {
+  const shouldBlockSleep = Array.from(activeTasks.values()).some(
+    (state) =>
+      !state.cancelled && !state.paused && BLOCK_SLEEP_STATUSES.has(state.currentStatus)
+  )
+
+  if (shouldBlockSleep) {
+    if (sleepBlockerId !== null && powerSaveBlocker.isStarted(sleepBlockerId)) return
+    sleepBlockerId = powerSaveBlocker.start('prevent-app-suspension')
+    return
+  }
+
+  if (sleepBlockerId !== null && powerSaveBlocker.isStarted(sleepBlockerId)) {
+    powerSaveBlocker.stop(sleepBlockerId)
+  }
+  sleepBlockerId = null
+}
+
+function removeQueuedTask(taskId: string): boolean {
+  const index = pendingTasks.findIndex((task) => task.taskId === taskId)
+  if (index < 0) return false
+  pendingTasks.splice(index, 1)
+  queuedTaskIds.delete(taskId)
+  return true
+}
+
+function removeQueuedResumeTask(taskId: string): boolean {
+  const index = pendingResumeTaskIds.findIndex((id) => id === taskId)
+  if (index < 0) return false
+  pendingResumeTaskIds.splice(index, 1)
+  queuedResumeTaskIds.delete(taskId)
+  return true
+}
+
+function getRunnableActiveCount(): number {
+  let count = 0
+  for (const state of activeTasks.values()) {
+    if (!state.cancelled && !state.paused) count++
+  }
+  return count
+}
+
+function resumePausedTaskNow(taskId: string): boolean {
+  const state = activeTasks.get(taskId)
+  if (!state || state.cancelled) return false
+
+  state.pauseRequested = false
+  state.paused = false
+  if (state.pauseResolver) {
+    state.pauseResolver()
+    state.pauseResolver = null
+  }
+
+  const last = lastWorkStatus.get(taskId)
+  if (last) {
+    reportProgress(taskId, last.status, last.progress, last.detail)
+  } else {
+    reportProgress(taskId, 'synthesizing', 55)
+  }
+  updateSleepBlocker()
+  return true
+}
+
+function startNextQueuedTasks(): void {
+  while (getRunnableActiveCount() < currentConcurrentPipelineLimit) {
+    const nextResumeTaskId = pendingResumeTaskIds.shift()
+    if (nextResumeTaskId) {
+      queuedResumeTaskIds.delete(nextResumeTaskId)
+      if (resumePausedTaskNow(nextResumeTaskId)) continue
+    }
+
+    const nextTask = pendingTasks.shift()
+    if (!nextTask) return
+    queuedTaskIds.delete(nextTask.taskId)
+    void runPipeline(nextTask.taskId, nextTask.videoPath, nextTask.subtitlePath, nextTask.config)
+  }
+}
+
+function enqueueTask(task: QueuedTaskEntry, front = false): void {
+  if (activeTasks.has(task.taskId) || queuedTaskIds.has(task.taskId)) return
+
+  if (front) pendingTasks.unshift(task)
+  else pendingTasks.push(task)
+
+  queuedTaskIds.add(task.taskId)
+  reportProgress(task.taskId, 'queued', 0)
+  startNextQueuedTasks()
+}
+
+function enqueuePausedTaskForResume(taskId: string): void {
+  if (queuedResumeTaskIds.has(taskId) || !activeTasks.has(taskId)) return
+  pendingResumeTaskIds.push(taskId)
+  queuedResumeTaskIds.add(taskId)
+  const last = lastWorkStatus.get(taskId)
+  reportProgress(taskId, 'queued', last?.progress ?? 0)
 }
 
 function checkCancelled(taskId: string): void {
@@ -64,7 +213,13 @@ function checkCancelled(taskId: string): void {
 
 async function checkPaused(taskId: string): Promise<void> {
   const state = activeTasks.get(taskId)
-  if (!state?.paused) return
+  if (!state || (!state.paused && !state.pauseRequested)) return
+  if (!state.paused) {
+    state.pauseRequested = false
+    state.paused = true
+    updateSleepBlocker()
+    startNextQueuedTasks()
+  }
   await new Promise<void>((resolve) => {
     state.pauseResolver = resolve
   })
@@ -78,13 +233,54 @@ function sendToRenderer(channel: string, ...args: unknown[]): void {
   })
 }
 
-const lastWorkStatus = new Map<string, { status: TaskStatus; progress: number }>()
+const lastWorkStatus = new Map<string, { status: TaskStatus; progress: number; detail?: string }>()
 
-function reportProgress(taskId: string, status: TaskStatus, progress: number): void {
-  if (status !== 'paused' && status !== 'completed' && status !== 'error') {
-    lastWorkStatus.set(taskId, { status, progress })
+function reportProgress(taskId: string, status: TaskStatus, progress: number, detail?: string): void {
+  const state = activeTasks.get(taskId)
+  const pausePending =
+    !!state &&
+    (state.pauseRequested || state.paused) &&
+    status !== 'paused' &&
+    status !== 'queued' &&
+    status !== 'completed' &&
+    status !== 'error'
+
+  if (state && !pausePending) {
+    state.currentStatus = status
   }
-  sendToRenderer('task:progress', taskId, status, progress)
+  if (LAST_WORK_STATUSES.has(status)) {
+    lastWorkStatus.set(taskId, { status, progress, detail })
+  }
+  if (pausePending) {
+    return
+  }
+  updateTaskStatusSnapshot(taskId, status, progress, detail)
+  updateSleepBlocker()
+  sendToRenderer('task:progress', taskId, status, progress, detail)
+}
+
+function reportReviewCountdown(taskId: string, remaining: number): void {
+  updateTaskCountdownSnapshot(taskId, remaining)
+  sendToRenderer('task:review-countdown', taskId, remaining)
+}
+
+function reportTaskError(taskId: string, message: string): void {
+  updateTaskErrorSnapshot(taskId, message)
+  sendToRenderer('task:error', taskId, message)
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null
+
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), timeoutMs)
+  })
+
+  try {
+    return await Promise.race([promise, timeoutPromise])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 // ─── Review checkpoint ──────────────────────────
@@ -96,44 +292,13 @@ async function reviewCheckpoint(
   config: AppConfig
 ): Promise<Cue[]> {
   const state = getTaskState(taskId)
-  state.chineseCues = [...chineseCues]
-
-  sendToRenderer('task:review-ready', taskId, englishCues, chineseCues)
-  reportProgress(taskId, 'reviewing', 50)
-
-  if (config.reviewMode === 'auto') {
-    return autoReview(taskId, state, config.autoReviewCountdown)
-  }
-  return manualReview(taskId, state)
-}
-
-function autoReview(taskId: string, state: TaskState, countdownSec: number): Promise<Cue[]> {
-  return new Promise((resolve, reject) => {
-    state.reviewResolver = resolve
-    state.reviewRejecter = reject
-
-    let remaining = countdownSec
-    sendToRenderer('task:review-countdown', taskId, remaining)
-
-    state.countdownTimer = setInterval(() => {
-      remaining--
-      sendToRenderer('task:review-countdown', taskId, remaining)
-
-      if (remaining <= 0) {
-        if (state.countdownTimer) clearInterval(state.countdownTimer)
-        state.countdownTimer = null
-        state.reviewResolver = null
-        state.reviewRejecter = null
-        resolve(state.chineseCues)
-      }
-    }, 1000)
-  })
-}
-
-function manualReview(taskId: string, state: TaskState): Promise<Cue[]> {
-  return new Promise((resolve, reject) => {
-    state.reviewResolver = resolve
-    state.reviewRejecter = reject
+  return runReviewSession(taskId, state, englishCues, chineseCues, config, {
+    persistCues: (data) => saveTaskCues(taskId, data),
+    onReady: (readyEnglishCues, readyChineseCues) => {
+      sendToRenderer('task:review-ready', taskId, readyEnglishCues, readyChineseCues)
+    },
+    onProgress: (status, progress) => reportProgress(taskId, status, progress),
+    onCountdown: (remaining) => reportReviewCountdown(taskId, remaining),
   })
 }
 
@@ -249,20 +414,19 @@ function computeSegmentTranslationBudget(windowBudget: number, risk: SegmentRisk
 
 // ─── Public API for IPC handlers ────────────────
 
-export function saveReviewCues(taskId: string, cues: Cue[]): void {
+export async function saveReviewCues(taskId: string, cues: Cue[]): Promise<void> {
   const state = activeTasks.get(taskId)
   if (state) state.chineseCues = cues
+  await saveTaskCues(taskId, { chineseCues: cues })
 }
 
-export function confirmReview(taskId: string, cues: Cue[]): void {
+export async function confirmReview(taskId: string, cues: Cue[]): Promise<void> {
   const state = activeTasks.get(taskId)
+  await saveTaskCues(taskId, { chineseCues: cues })
   if (!state) return
 
   state.chineseCues = cues
-  if (state.countdownTimer) {
-    clearInterval(state.countdownTimer)
-    state.countdownTimer = null
-  }
+  clearReviewCountdown(state)
   if (state.reviewResolver) {
     state.reviewResolver(cues)
     state.reviewResolver = null
@@ -270,33 +434,105 @@ export function confirmReview(taskId: string, cues: Cue[]): void {
   }
 }
 
-export function pauseTask(taskId: string): void {
-  getTaskState(taskId).paused = true
+function getPauseDetail(currentStatus: TaskStatus): string | undefined {
+  if (currentStatus === 'synthesizing') return '暂停中，等待当前片段合成结束'
+  if (
+    currentStatus === 'parsing' ||
+    currentStatus === 'translating' ||
+    currentStatus === 'assembling' ||
+    currentStatus === 'encoding'
+  ) {
+    return '暂停中，等待当前步骤结束'
+  }
+  return undefined
+}
+
+function pauseQueuedTask(taskId: string): boolean {
+  const removedQueuedTask = removeQueuedTask(taskId)
+  const removedQueuedResume = removeQueuedResumeTask(taskId)
+
+  if (!removedQueuedTask && !removedQueuedResume) return false
+
+  const state = activeTasks.get(taskId)
+  if (state) {
+    state.pauseRequested = false
+    state.paused = true
+  }
+
+  const snapshot = getTaskSnapshot(taskId)
   const last = lastWorkStatus.get(taskId)
-  reportProgress(taskId, 'paused', last?.progress ?? 0)
+  const progress = last?.progress ?? snapshot?.progress ?? 0
+  reportProgress(taskId, 'paused', progress)
+  return true
+}
+
+function pauseTaskInternal(taskId: string, refillQueue: boolean): void {
+  if (pauseQueuedTask(taskId)) return
+
+  const state = activeTasks.get(taskId)
+  if (!state || state.cancelled || state.paused || state.pauseRequested) return
+
+  removeQueuedResumeTask(taskId)
+  const last = lastWorkStatus.get(taskId)
+  const progress = last?.progress ?? 0
+  const detail = getPauseDetail(state.currentStatus)
+
+  if (state.currentStatus === 'reviewing') {
+    state.paused = true
+    reportProgress(taskId, 'paused', progress, detail)
+    if (refillQueue) startNextQueuedTasks()
+    return
+  }
+
+  state.pauseRequested = true
+  reportProgress(taskId, 'paused', progress, detail)
+}
+
+export function pauseTask(taskId: string): void {
+  pauseTaskInternal(taskId, true)
 }
 
 export function resumeTask(taskId: string, config?: AppConfig): void {
+  if (config) {
+    currentConcurrentPipelineLimit = getConcurrentPipelineLimit(config)
+  }
+
   const state = activeTasks.get(taskId)
   if (state) {
-    state.paused = false
-    if (state.pauseResolver) {
-      state.pauseResolver()
-      state.pauseResolver = null
+    if (state.cancelled) return
+    removeQueuedResumeTask(taskId)
+
+    if (state.pauseRequested && !state.paused) {
+      state.pauseRequested = false
+      const last = lastWorkStatus.get(taskId)
+      if (last) reportProgress(taskId, last.status, last.progress, last.detail)
+      updateSleepBlocker()
+      return
     }
-    const last = lastWorkStatus.get(taskId)
-    if (last) {
-      reportProgress(taskId, last.status, last.progress)
+
+    if (!state.paused) return
+
+    if (getRunnableActiveCount() < currentConcurrentPipelineLimit) {
+      resumePausedTaskNow(taskId)
     } else {
-      reportProgress(taskId, 'synthesizing', 55)
+      enqueuePausedTaskForResume(taskId)
     }
     return
   }
 
   if (!config) return
-  const task = loadTaskSnapshots().find((t) => t.id === taskId)
+  if (queuedTaskIds.has(taskId)) return
+  const task = getTaskSnapshot(taskId)
   if (!task?.subtitlePath) return
-  runPipeline(taskId, task.videoPath, task.subtitlePath, config)
+  enqueueTask(
+    {
+      taskId,
+      videoPath: task.videoPath,
+      subtitlePath: task.subtitlePath,
+      config,
+    },
+    true
+  )
 }
 
 export function cancelAllTasks(taskIds: string[]): void {
@@ -306,14 +542,21 @@ export function cancelAllTasks(taskIds: string[]): void {
 }
 
 export function cancelTask(taskId: string): void {
+  if (removeQueuedTask(taskId)) {
+    void deleteTaskCues(taskId)
+    return
+  }
+  removeQueuedResumeTask(taskId)
+
   const state = activeTasks.get(taskId)
-  if (!state) return
+  if (!state) {
+    void deleteTaskCues(taskId)
+    return
+  }
 
   state.cancelled = true
-  if (state.countdownTimer) {
-    clearInterval(state.countdownTimer)
-    state.countdownTimer = null
-  }
+  updateSleepBlocker()
+  clearReviewCountdown(state)
   if (state.reviewRejecter) {
     state.reviewRejecter(new Error('TASK_CANCELLED'))
     state.reviewResolver = null
@@ -326,10 +569,41 @@ export function cancelTask(taskId: string): void {
 }
 
 export function pauseAllActiveTasks(): void {
-  for (const [taskId, state] of activeTasks) {
-    if (state.cancelled || state.paused) continue
-    pauseTask(taskId)
+  const queuedTaskIdsToPause = Array.from(queuedTaskIds)
+  const queuedResumeTaskIdsToPause = Array.from(queuedResumeTaskIds)
+  const taskIdsToPause: string[] = []
+
+  for (const taskId of queuedTaskIdsToPause) {
+    pauseQueuedTask(taskId)
   }
+
+  for (const taskId of queuedResumeTaskIdsToPause) {
+    pauseQueuedTask(taskId)
+  }
+
+  for (const [taskId, state] of activeTasks) {
+    if (state.cancelled || state.paused || state.pauseRequested) continue
+    taskIdsToPause.push(taskId)
+  }
+
+  for (const taskId of taskIdsToPause) {
+    pauseTaskInternal(taskId, false)
+  }
+}
+
+export function resumeAllTasks(taskIds: string[], config?: AppConfig): void {
+  if (!Array.isArray(taskIds) || taskIds.length === 0 || !config) return
+  currentConcurrentPipelineLimit = getConcurrentPipelineLimit(config)
+
+  for (const taskId of taskIds) {
+    if (typeof taskId !== 'string' || !taskId.trim()) continue
+    resumeTask(taskId, config)
+  }
+}
+
+export function updateConcurrentPipelineLimit(config?: AppConfig): void {
+  currentConcurrentPipelineLimit = getConcurrentPipelineLimit(config)
+  startNextQueuedTasks()
 }
 
 // ─── Main pipeline ──────────────────────────────
@@ -344,6 +618,9 @@ export async function runPipeline(
   let tempDir: string | undefined
 
   try {
+    const configError = validateTaskConfig(config)
+    if (configError) throw new Error(configError)
+
     // Step 1: Parse subtitles
     reportProgress(taskId, 'parsing', 5)
     const englishCues = parseSubtitleFile(subtitlePath)
@@ -445,7 +722,7 @@ export async function runPipeline(
     }
 
     // Step 8 & 9: TTS synthesis per segment with fallback + duration measurement
-    reportProgress(taskId, 'synthesizing', 55)
+    reportProgress(taskId, 'synthesizing', 55, '正在准备音频合成')
     const assemblerSegments: AssemblerSegment[] = []
     const totalSegments = segments.length
 
@@ -457,6 +734,10 @@ export async function runPipeline(
       const seg = segments[i]
       const win = windows[i]
       const text = seg.textZh || ''
+      const synthProgress = 55 + Math.round(((i + 1) / totalSegments) * 25)
+      const segmentDetail = `正在合成第 ${i + 1}/${totalSegments} 段音频`
+
+      reportProgress(taskId, 'synthesizing', Math.max(55, synthProgress - 1), segmentDetail)
 
       if (!text.trim()) {
         assemblerSegments.push({
@@ -478,7 +759,11 @@ export async function runPipeline(
         windows,
       }
 
-      const audio = await synthesizeWithFallback(ctx)
+      const audio = await withTimeout(
+        synthesizeWithFallback(ctx),
+        SYNTHESIS_SEGMENT_TIMEOUT_MS,
+        `音频合成超时：第 ${i + 1}/${totalSegments} 段等待超过 ${Math.round(SYNTHESIS_SEGMENT_TIMEOUT_MS / 1000)} 秒`
+      )
 
       assemblerSegments.push({
         startUs: win.startUs,
@@ -486,8 +771,7 @@ export async function runPipeline(
         pcm: audio.pcm,
       })
 
-      const synthProgress = 55 + Math.round(((i + 1) / totalSegments) * 25)
-      reportProgress(taskId, 'synthesizing', synthProgress)
+      reportProgress(taskId, 'synthesizing', synthProgress, segmentDetail)
     }
 
     checkCancelled(taskId)
@@ -495,7 +779,7 @@ export async function runPipeline(
     checkCancelled(taskId)
 
     // Step 10: Assemble audio track
-    reportProgress(taskId, 'assembling', 82)
+    reportProgress(taskId, 'assembling', 82, '正在拼接整条配音轨道')
     tempDir = join(tmpdir(), `chronodub-${taskId}`)
     mkdirSync(tempDir, { recursive: true })
     const wavPath = join(tempDir, 'dubbed.wav')
@@ -505,7 +789,7 @@ export async function runPipeline(
     checkCancelled(taskId)
 
     // Step 11: FFmpeg mux
-    reportProgress(taskId, 'encoding', 88)
+    reportProgress(taskId, 'encoding', 88, '正在封装输出视频')
     const videoName = basename(videoPath, extname(videoPath))
     const videoExt = extname(videoPath)
     const outputDir = join(config.outputDir, videoName)
@@ -518,19 +802,26 @@ export async function runPipeline(
     checkCancelled(taskId)
 
     // Step 12: Save Chinese subtitle
-    reportProgress(taskId, 'encoding', 95)
+    reportProgress(taskId, 'encoding', 95, '正在写出字幕和结果文件')
     const outputSubPath = join(outputDir, videoName + '.srt')
     saveSubtitleFile(outputSubPath, reviewedCues)
+    await saveTaskCues(taskId, { englishCues, chineseCues: reviewedCues })
 
     // Done
-    reportProgress(taskId, 'completed', 100)
+    reportProgress(taskId, 'completed', 100, '处理完成')
   } catch (err: any) {
     if (err?.message === 'TASK_CANCELLED') {
       return
     }
     console.error(`Pipeline 失败 [${taskId}]:`, err)
     reportProgress(taskId, 'error', 0)
-    sendToRenderer('task:error', taskId, err?.message || '未知错误')
+    const message =
+      typeof err?.message === 'string' && err.message.trim()
+        ? err.message
+        : typeof err === 'string' && err.trim()
+          ? err
+          : '未知错误'
+    reportTaskError(taskId, message)
   } finally {
     if (tempDir) {
       try {
@@ -541,6 +832,7 @@ export async function runPipeline(
     }
     cleanupTask(taskId)
     lastWorkStatus.delete(taskId)
+    startNextQueuedTasks()
   }
 }
 
@@ -549,15 +841,28 @@ export function startTasks(
   tasks: Array<{ videoPath: string; subtitlePath: string | null }>,
   config: AppConfig
 ): void {
+  const configError = validateTaskConfig(config)
+  currentConcurrentPipelineLimit = getConcurrentPipelineLimit(config)
+
   for (let i = 0; i < taskIds.length; i++) {
     const taskId = taskIds[i]
     const task = tasks[i]
-    if (activeTasks.has(taskId)) continue
+    if (activeTasks.has(taskId) || queuedTaskIds.has(taskId)) continue
+    if (configError) {
+      reportProgress(taskId, 'error', 0)
+      sendToRenderer('task:error', taskId, configError)
+      continue
+    }
     if (!task?.subtitlePath) {
       reportProgress(taskId, 'error', 0)
       sendToRenderer('task:error', taskId, '未关联字幕文件')
       continue
     }
-    runPipeline(taskId, task.videoPath, task.subtitlePath, config)
+    enqueueTask({
+      taskId,
+      videoPath: task.videoPath,
+      subtitlePath: task.subtitlePath,
+      config,
+    })
   }
 }
