@@ -26,6 +26,7 @@ const api: IpcApi = {
     parse: (filePath) => ipcRenderer.invoke('subtitle:parse', filePath),
     save: (filePath, cues) => ipcRenderer.invoke('subtitle:save', filePath, cues),
     detect: (videoPath) => ipcRenderer.invoke('subtitle:detect', videoPath),
+    listFonts: () => ipcRenderer.invoke('subtitle:list-fonts'),
     pathFromFile: (file) => webUtils.getPathForFile(file),
   },
   task: {
@@ -36,11 +37,11 @@ const api: IpcApi = {
       ipcRenderer.send('task:update-subtitle-path', taskId, subtitlePath),
     replaceSubtitlePath: (taskId, subtitlePath) =>
       ipcRenderer.send('task:replace-subtitle-path', taskId, subtitlePath),
-    start: (tasks) => ipcRenderer.send('task:start', tasks),
+    start: (tasks, config) => ipcRenderer.send('task:start', tasks, config),
     pauseAll: () => ipcRenderer.send('task:pause-all'),
-    resumeAll: (taskIds) => ipcRenderer.send('task:resume-all', taskIds),
+    resumeAll: (taskIds, config) => ipcRenderer.send('task:resume-all', taskIds, config),
     pause: (taskId) => ipcRenderer.send('task:pause', taskId),
-    resume: (taskId) => ipcRenderer.send('task:resume', taskId),
+    resume: (taskId, config) => ipcRenderer.send('task:resume', taskId, config),
     cancel: (taskId) => ipcRenderer.send('task:cancel', taskId),
     cancelAll: (taskIds) => ipcRenderer.send('task:cancel-all', taskIds),
     saveReview: (taskId, cues) => ipcRenderer.send('task:save-review', taskId, cues),

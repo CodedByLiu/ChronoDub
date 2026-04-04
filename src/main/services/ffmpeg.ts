@@ -35,6 +35,41 @@ export interface ProbeResult {
   audioCodec: string | null
   audioSampleRate: number | null
   audioChannels: number | null
+  videoWidth: number | null
+  videoHeight: number | null
+  displayWidth: number | null
+  displayHeight: number | null
+}
+
+function parsePositiveInt(value: unknown): number | null {
+  const parsed = typeof value === 'string' ? parseInt(value, 10) : Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function resolveDisplaySize(videoStream: any): { displayWidth: number | null; displayHeight: number | null } {
+  const videoWidth = parsePositiveInt(videoStream?.width)
+  const videoHeight = parsePositiveInt(videoStream?.height)
+  if (!videoWidth || !videoHeight) {
+    return { displayWidth: null, displayHeight: null }
+  }
+
+  const sampleAspectRatio =
+    typeof videoStream?.sample_aspect_ratio === 'string' ? videoStream.sample_aspect_ratio : ''
+  const match = sampleAspectRatio.match(/^(\d+):(\d+)$/)
+  if (!match) {
+    return { displayWidth: videoWidth, displayHeight: videoHeight }
+  }
+
+  const sarNum = parseInt(match[1], 10)
+  const sarDen = parseInt(match[2], 10)
+  if (!Number.isFinite(sarNum) || !Number.isFinite(sarDen) || sarNum <= 0 || sarDen <= 0) {
+    return { displayWidth: videoWidth, displayHeight: videoHeight }
+  }
+
+  return {
+    displayWidth: Math.max(1, Math.round((videoWidth * sarNum) / sarDen)),
+    displayHeight: videoHeight,
+  }
 }
 
 export function ffprobe(filePath: string): Promise<ProbeResult> {
@@ -49,12 +84,20 @@ export function ffprobe(filePath: string): Promise<ProbeResult> {
           const info = JSON.parse(stdout)
           const durationSec = parseFloat(info.format?.duration || '0')
           const audioStream = info.streams?.find((s: any) => s.codec_type === 'audio')
+          const videoStream = info.streams?.find((s: any) => s.codec_type === 'video')
+          const videoWidth = parsePositiveInt(videoStream?.width)
+          const videoHeight = parsePositiveInt(videoStream?.height)
+          const { displayWidth, displayHeight } = resolveDisplaySize(videoStream)
 
           resolve({
             durationUs: Math.round(durationSec * 1_000_000),
             audioCodec: audioStream?.codec_name || null,
             audioSampleRate: audioStream ? parseInt(audioStream.sample_rate) : null,
             audioChannels: audioStream ? parseInt(audioStream.channels) : null,
+            videoWidth,
+            videoHeight,
+            displayWidth,
+            displayHeight,
           })
         } catch (parseErr) {
           reject(new Error(`ffprobe 解析失败: ${parseErr}`))
@@ -228,6 +271,70 @@ export function muxVideoWithAudio(
 
     proc.on('close', (code) => {
       if (code !== 0) return reject(new Error(`FFmpeg mux 失败 (${code}): ${stderr.slice(-500)}`))
+      resolve()
+    })
+    proc.on('error', reject)
+  })
+}
+
+function escapeFilterPath(filePath: string): string {
+  return filePath
+    .replace(/\\/g, '/')
+    .replace(/:/g, '\\:')
+    .replace(/'/g, "\\'")
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;')
+}
+
+export function burnSubtitlesIntoVideo(
+  videoPath: string,
+  audioPath: string,
+  subtitlePath: string,
+  outputPath: string
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const escapedSubtitlePath = escapeFilterPath(subtitlePath)
+    const args = [
+      '-y',
+      '-i',
+      videoPath,
+      '-i',
+      audioPath,
+      '-vf',
+      `ass=filename='${escapedSubtitlePath}'`,
+      '-c:v',
+      'libx264',
+      '-preset',
+      'medium',
+      '-crf',
+      '18',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
+      '-shortest',
+      outputPath,
+    ]
+
+    const proc = spawn(getFFmpegPath(), args, { stdio: ['ignore', 'pipe', 'pipe'] })
+
+    let stderr = ''
+    proc.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        return reject(new Error(`FFmpeg burn subtitles failed (${code}): ${stderr.slice(-500)}`))
+      }
       resolve()
     })
     proc.on('error', reject)

@@ -15,8 +15,26 @@ export type TaskStatus =
 
 export type ReviewMode = 'auto' | 'manual'
 export type ConcurrencyOption = 2 | 4 | 6 | 8
+export type SubtitleOutputMode = 'external' | 'burned'
+export type SubtitlePosition = 'top-safe' | 'bottom-safe'
 
 export const CONCURRENCY_OPTIONS: ConcurrencyOption[] = [2, 4, 6, 8]
+
+export interface SubtitleStyleConfig {
+  fontFamily: string
+  fontSize: number
+  bold: boolean
+  italic: boolean
+  textColor: string
+  outlineEnabled: boolean
+  outlineWidth: number
+  outlineColor: string
+  backgroundEnabled: boolean
+  backgroundColor: string
+  backgroundOpacity: number
+  position: SubtitlePosition
+  safeMargin: number
+}
 
 export interface Cue {
   id: number
@@ -65,9 +83,27 @@ export interface AppConfig {
   selectedVoice: string
   outputDir: string
   createVideoSubfolder: boolean
+  subtitleOutputMode: SubtitleOutputMode
+  subtitleStyle: SubtitleStyleConfig
   reviewMode: ReviewMode
   autoReviewCountdown: number
   maxConcurrentTasks: ConcurrencyOption
+}
+
+export const DEFAULT_SUBTITLE_STYLE: SubtitleStyleConfig = {
+  fontFamily: '',
+  fontSize: 42,
+  bold: false,
+  italic: false,
+  textColor: '#FFFFFF',
+  outlineEnabled: false,
+  outlineWidth: 3,
+  outlineColor: '#000000',
+  backgroundEnabled: true,
+  backgroundColor: '#000000',
+  backgroundOpacity: 70,
+  position: 'bottom-safe',
+  safeMargin: 72,
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -76,6 +112,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   selectedVoice: '',
   outputDir: '',
   createVideoSubfolder: true,
+  subtitleOutputMode: 'external',
+  subtitleStyle: DEFAULT_SUBTITLE_STYLE,
   reviewMode: 'auto',
   autoReviewCountdown: 30,
   maxConcurrentTasks: 2,
@@ -129,6 +167,7 @@ export interface IpcApi {
     parse: (filePath: string) => Promise<Cue[]>
     save: (filePath: string, cues: Cue[]) => Promise<void>
     detect: (videoPath: string) => Promise<string | null>
+    listFonts: () => Promise<string[]>
     pathFromFile: (file: File) => string
   }
   task: {
@@ -137,11 +176,11 @@ export interface IpcApi {
     register: (tasks: VideoTask[]) => void
     updateSubtitlePath: (taskId: string, subtitlePath: string) => void
     replaceSubtitlePath: (taskId: string, subtitlePath: string) => void
-    start: (tasks: TaskStartInfo[]) => void
+    start: (tasks: TaskStartInfo[], config: AppConfig) => void
     pauseAll: () => void
-    resumeAll: (taskIds: string[]) => void
+    resumeAll: (taskIds: string[], config: AppConfig) => void
     pause: (taskId: string) => void
-    resume: (taskId: string) => void
+    resume: (taskId: string, config: AppConfig) => void
     cancel: (taskId: string) => void
     cancelAll: (taskIds: string[]) => void
     saveReview: (taskId: string, cues: Cue[]) => void

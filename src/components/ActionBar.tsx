@@ -120,7 +120,7 @@ export function ActionBar() {
       .filter((t) => t.status === 'waiting' && t.subtitlePath)
       .map((t) => ({ id: t.id, videoPath: t.videoPath, subtitlePath: t.subtitlePath }))
 
-    if (waitingTasks.length > 0) window.api?.task.start(waitingTasks)
+    if (waitingTasks.length > 0) window.api?.task.start(waitingTasks, config)
   }
 
   const handlePauseAll = () => {
@@ -130,12 +130,12 @@ export function ActionBar() {
 
   const handleResumeAll = () => {
     if (!hasPausedTasks) return
-    window.api?.task.resumeAll(pausedTaskIds)
+    window.api?.task.resumeAll(pausedTaskIds, config)
   }
 
   const handleRetryFailed = () => {
     if (!hasFailedTasks) return
-    window.api?.task.resumeAll(failedTaskIds)
+    window.api?.task.resumeAll(failedTaskIds, config)
   }
 
   const handleClear = () => {

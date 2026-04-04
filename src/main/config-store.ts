@@ -19,6 +19,10 @@ function normalizeConfig(config: Partial<AppConfig> | null | undefined): AppConf
 
   return {
     ...merged,
+    subtitleStyle: {
+      ...DEFAULT_CONFIG.subtitleStyle,
+      ...(config?.subtitleStyle ?? {}),
+    },
     maxConcurrentTasks,
   }
 }
@@ -27,6 +31,7 @@ function cloneConfig(config: AppConfig): AppConfig {
   return {
     ...config,
     dictionary: config.dictionary.map((item) => ({ ...item })),
+    subtitleStyle: { ...config.subtitleStyle },
   }
 }
 

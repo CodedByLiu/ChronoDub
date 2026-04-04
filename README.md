@@ -33,7 +33,8 @@ This makes it suitable for tutorial videos, technical walkthroughs, and other na
 - Generate Chinese dubbing with Edge TTS and preview voices in the app.
 - Measure synthesized duration and apply timing-safe fallback strategies when a segment is too long.
 - Pause, resume, cancel, and recover tasks after restart or sleep.
-- Export dubbed videos together with generated Chinese subtitle files.
+- Export dubbed videos with either external subtitle files or burned-in Chinese subtitles.
+- Configure burned subtitle styles with system fonts, size, colors, outline, background fill, and top/bottom safe-area placement.
 
 ## Workflow
 
@@ -171,9 +172,9 @@ npm run dist
 
 ## Output Layout
 
-For an input video named `MyVideo.mp4`, ChronoDub supports two output layouts.
+For an input video named `MyVideo.mp4`, ChronoDub supports both subtitle render modes and both folder layouts.
 
-Default layout:
+External subtitle mode:
 
 ```text
 <outputDir>/MyVideo/
@@ -181,12 +182,19 @@ Default layout:
   MyVideo.srt
 ```
 
-When "Create a subfolder for each video" is disabled:
+Burned subtitle mode:
+
+```text
+<outputDir>/MyVideo/
+  MyVideo.mp4
+```
+
+When "Create a subfolder for each video" is disabled, files are written directly into the selected output folder:
 
 ```text
 <outputDir>/
   MyVideo.mp4
-  MyVideo.srt
+  MyVideo.srt   # only generated in external subtitle mode
 ```
 
 ## Project Structure

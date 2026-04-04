@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { Eye, FileVideo, Pause, Pencil, Play, Trash2 } from 'lucide-react'
-import type { ReviewMode, TaskStatus, VideoTask } from '../types'
+import type { AppConfig, ReviewMode, TaskStatus, VideoTask } from '../types'
 import { TASK_STATUS_META } from '../types'
 import { useAppStore } from '../stores/app-store'
 import { Badge } from './ui/badge'
@@ -59,6 +59,7 @@ const SUBTITLE_EDITABLE_STATUSES = new Set<TaskStatus>(['waiting', 'paused', 'er
 interface VideoTaskRowProps {
   task: VideoTask
   reviewMode: ReviewMode
+  config: AppConfig
   nowMs: number
   onDragOver: (e: React.DragEvent) => void
   onDrop: (taskId: string, e: React.DragEvent) => void
@@ -70,6 +71,7 @@ interface VideoTaskRowProps {
 const VideoTaskRow = memo(function VideoTaskRow({
   task,
   reviewMode,
+  config,
   nowMs,
   onDragOver,
   onDrop,
@@ -131,7 +133,7 @@ const VideoTaskRow = memo(function VideoTaskRow({
           key="resume"
           variant="outline"
           size="xs"
-          onClick={() => window.api?.task.resume(task.id)}
+          onClick={() => window.api?.task.resume(task.id, config)}
         >
           <Play className="size-3" />
           继续
@@ -143,7 +145,7 @@ const VideoTaskRow = memo(function VideoTaskRow({
           key="retry"
           variant="outline"
           size="xs"
-          onClick={() => window.api?.task.resume(task.id)}
+          onClick={() => window.api?.task.resume(task.id, config)}
         >
           <Play className="size-3" />
           重试
@@ -442,6 +444,7 @@ export function VideoTable() {
             key={task.id}
             task={task}
             reviewMode={config.reviewMode}
+            config={config}
             nowMs={nowMs}
             onDragOver={handleDragOver}
             onDrop={handleDrop}

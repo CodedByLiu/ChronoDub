@@ -33,7 +33,8 @@ ChronoDub 把字幕解析、DeepSeek 翻译、Edge TTS 合成和 FFmpeg 封装�
 - 使用 Edge TTS 生成中文配音，并支持应用内试听音色。
 - 对已生成语音测量真实时长，并在超窗时执行时长安全回退策略。
 - 支持任务暂停、继续、取消，以及重启或睡眠后的恢复。
-- 输出配音后的视频和生成后的中文字幕文件。
+- 支持输出外置字幕文件，或直接生成带硬嵌中文字幕的视频。
+- 硬嵌字幕支持系统字体、字号、颜色、描边、背景填充和顶部/底部安全区位置配置。
 
 ## 工作流程
 
@@ -171,9 +172,9 @@ npm run dist
 
 ## 输出结构
 
-如果输入视频名为 `MyVideo.mp4`，ChronoDub 支持两种输出组织方式。
+如果输入视频名为 `MyVideo.mp4`，ChronoDub 支持两种字幕输出方式和两种目录组织方式。
 
-默认模式：
+外置字幕模式：
 
 ```text
 <outputDir>/MyVideo/
@@ -181,12 +182,19 @@ npm run dist
   MyVideo.srt
 ```
 
-关闭“为每个视频单独创建文件夹”后：
+硬嵌字幕模式：
+
+```text
+<outputDir>/MyVideo/
+  MyVideo.mp4
+```
+
+关闭“为每个视频单独创建文件夹”后，文件会直接平铺到输出目录中：
 
 ```text
 <outputDir>/
   MyVideo.mp4
-  MyVideo.srt
+  MyVideo.srt   # 仅外置字幕模式生成
 ```
 
 ## 项目结构

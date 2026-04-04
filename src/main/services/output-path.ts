@@ -6,7 +6,7 @@ const reservedPaths = new Set<string>()
 export interface ReservedOutputTarget {
   outputDir: string
   outputVideoPath: string
-  outputSubtitlePath: string
+  outputSubtitlePath?: string
   release: () => void
 }
 
@@ -30,7 +30,8 @@ function findUniqueName(
   outputRoot: string,
   desiredName: string,
   createVideoSubfolder: boolean,
-  videoExt: string
+  videoExt: string,
+  includeExternalSubtitle: boolean
 ): string {
   let attempt = 0
 
@@ -47,9 +48,9 @@ function findUniqueName(
       const candidateSubtitlePath = join(outputRoot, candidate + '.srt')
       if (
         !existsSync(candidateVideoPath) &&
-        !existsSync(candidateSubtitlePath) &&
+        (!includeExternalSubtitle || !existsSync(candidateSubtitlePath)) &&
         !isReserved(candidateVideoPath) &&
-        !isReserved(candidateSubtitlePath)
+        (!includeExternalSubtitle || !isReserved(candidateSubtitlePath))
       ) {
         return candidate
       }
@@ -62,11 +63,18 @@ function findUniqueName(
 export function reserveOutputTarget(
   videoPath: string,
   outputRoot: string,
-  createVideoSubfolder: boolean
+  createVideoSubfolder: boolean,
+  includeExternalSubtitle: boolean
 ): ReservedOutputTarget {
   const originalStem = basename(videoPath, extname(videoPath))
   const videoExt = extname(videoPath)
-  const uniqueName = findUniqueName(outputRoot, originalStem, createVideoSubfolder, videoExt)
+  const uniqueName = findUniqueName(
+    outputRoot,
+    originalStem,
+    createVideoSubfolder,
+    videoExt,
+    includeExternalSubtitle
+  )
 
   if (createVideoSubfolder) {
     const outputDir = join(outputRoot, uniqueName)
@@ -74,18 +82,20 @@ export function reserveOutputTarget(
     return {
       outputDir,
       outputVideoPath: join(outputDir, originalStem + videoExt),
-      outputSubtitlePath: join(outputDir, originalStem + '.srt'),
+      ...(includeExternalSubtitle ? { outputSubtitlePath: join(outputDir, originalStem + '.srt') } : {}),
       release,
     }
   }
 
   const outputVideoPath = join(outputRoot, uniqueName + videoExt)
-  const outputSubtitlePath = join(outputRoot, uniqueName + '.srt')
-  const release = reservePaths([outputVideoPath, outputSubtitlePath])
+  const outputSubtitlePath = includeExternalSubtitle ? join(outputRoot, uniqueName + '.srt') : undefined
+  const release = reservePaths(
+    outputSubtitlePath ? [outputVideoPath, outputSubtitlePath] : [outputVideoPath]
+  )
   return {
     outputDir: outputRoot,
     outputVideoPath,
-    outputSubtitlePath,
+    ...(outputSubtitlePath ? { outputSubtitlePath } : {}),
     release,
   }
 }

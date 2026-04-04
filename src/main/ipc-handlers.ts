@@ -3,6 +3,7 @@ import { existsSync } from 'fs'
 import { loadConfig, loadConfigSync, saveConfig } from './config-store'
 import { parseSubtitleFile, saveSubtitleFile } from './services/subtitle-parser'
 import { detectSubtitleForVideo } from './services/subtitle-detect'
+import { listSystemFonts } from './services/font-service'
 import { getChineseVoices, synthesizeToBuffer } from './services/edge-tts'
 import { deleteTaskCues, loadTaskCues } from './task-cue-store'
 import {
@@ -34,6 +35,7 @@ const INVOKE_CHANNELS = [
   'dialog:open-output',
   'dialog:open-subtitle',
   'subtitle:detect',
+  'subtitle:list-fonts',
   'tts:get-voices',
   'tts:test-voice',
   'subtitle:parse',
@@ -90,6 +92,15 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('subtitle:detect', async (_event, videoPath: string) => {
     return await detectSubtitleForVideo(videoPath)
+  })
+
+  ipcMain.handle('subtitle:list-fonts', async () => {
+    try {
+      return await listSystemFonts()
+    } catch (err) {
+      console.error('Failed to list system fonts:', err)
+      return []
+    }
   })
 
   ipcMain.handle('tts:get-voices', async () => {
@@ -151,14 +162,14 @@ export function registerIpcHandlers(): void {
     void deleteTaskCues(taskId)
   })
 
-  ipcMain.on('task:start', (_event, taskInfos: TaskStartInfo[]) => {
-    const config = loadConfigSync()
+  ipcMain.on('task:start', (_event, taskInfos: TaskStartInfo[], config?: AppConfig) => {
+    const effectiveConfig = config ?? loadConfigSync()
     const taskIds = taskInfos.map((t) => t.id)
     const tasks = taskInfos.map((t) => ({
       videoPath: t.videoPath,
       subtitlePath: t.subtitlePath,
     }))
-    startTasks(taskIds, tasks, config)
+    startTasks(taskIds, tasks, effectiveConfig)
   })
 
   ipcMain.on('task:pause', (_event, taskId: string) => {
@@ -188,12 +199,12 @@ export function registerIpcHandlers(): void {
     void confirmReview(taskId, cues)
   })
 
-  ipcMain.on('task:resume', (_event, taskId: string) => {
-    resumeTask(taskId, loadConfigSync())
+  ipcMain.on('task:resume', (_event, taskId: string, config?: AppConfig) => {
+    resumeTask(taskId, config ?? loadConfigSync())
   })
 
-  ipcMain.on('task:resume-all', (_event, taskIds: string[]) => {
-    resumeAllTasks(Array.isArray(taskIds) ? taskIds : [], loadConfigSync())
+  ipcMain.on('task:resume-all', (_event, taskIds: string[], config?: AppConfig) => {
+    resumeAllTasks(Array.isArray(taskIds) ? taskIds : [], config ?? loadConfigSync())
   })
 }
 

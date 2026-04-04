@@ -4,7 +4,7 @@ import { BrowserWindow, powerSaveBlocker } from 'electron'
 import type { Cue, AppConfig, TaskStatus } from '../../types'
 import { parseSubtitleFile, saveSubtitleFile } from './subtitle-parser'
 import { translateSegments, applyTerminologyToChinese } from './deepseek'
-import { ffprobe, muxVideoWithAudio } from './ffmpeg'
+import { burnSubtitlesIntoVideo, ffprobe, muxVideoWithAudio } from './ffmpeg'
 import {
   buildSegments,
   buildTimeWindows,
@@ -33,6 +33,7 @@ import {
   splitSegmentTextAcrossCues,
 } from './subtitle-timing'
 import { reserveOutputTarget, type ReservedOutputTarget } from './output-path'
+import { saveAssSubtitleFile } from './subtitle-renderer'
 
 // ─── Task state management ──────────────────────
 
@@ -923,17 +924,29 @@ export async function runPipeline(
     reservedOutput = reserveOutputTarget(
       videoPath,
       config.outputDir,
-      config.createVideoSubfolder
+      config.createVideoSubfolder,
+      config.subtitleOutputMode === 'external'
     )
     mkdirSync(reservedOutput.outputDir, { recursive: true })
     await checkPaused(taskId)
     checkCancelled(taskId)
-    await muxVideoWithAudio(videoPath, wavPath, reservedOutput.outputVideoPath)
+    if (config.subtitleOutputMode === 'burned') {
+      const assPath = join(tempDir, 'burned.ass')
+      saveAssSubtitleFile(assPath, finalizedCues, config.subtitleStyle, {
+        width: probeResult.displayWidth ?? probeResult.videoWidth ?? 1920,
+        height: probeResult.displayHeight ?? probeResult.videoHeight ?? 1080,
+      })
+      await burnSubtitlesIntoVideo(videoPath, wavPath, assPath, reservedOutput.outputVideoPath)
+    } else {
+      await muxVideoWithAudio(videoPath, wavPath, reservedOutput.outputVideoPath)
+    }
     checkCancelled(taskId)
 
     // Step 12: Save Chinese subtitle
     reportProgress(taskId, 'encoding', 95, '正在写出字幕和结果文件')
-    saveSubtitleFile(reservedOutput.outputSubtitlePath, finalizedCues)
+    if (config.subtitleOutputMode === 'external' && reservedOutput.outputSubtitlePath) {
+      saveSubtitleFile(reservedOutput.outputSubtitlePath, finalizedCues)
+    }
     await saveTaskCues(taskId, { englishCues, chineseCues: finalizedCues })
     sendToRenderer('task:cues-updated', taskId, englishCues, finalizedCues)
 

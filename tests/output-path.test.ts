@@ -16,16 +16,30 @@ function withTempDir(run: (dir: string) => void): void {
 
 test('reserveOutputTarget avoids flat output collisions for same basename videos', () => {
   withTempDir((dir) => {
-    const first = reserveOutputTarget('C:\\videos\\lesson.mp4', dir, false)
-    const second = reserveOutputTarget('D:\\other\\lesson.mp4', dir, false)
+    const first = reserveOutputTarget('C:\\videos\\lesson.mp4', dir, false, true)
+    const second = reserveOutputTarget('D:\\other\\lesson.mp4', dir, false, true)
 
     try {
       assert.match(first.outputVideoPath, /lesson\.mp4$/)
+      assert.match(first.outputSubtitlePath ?? '', /lesson\.srt$/)
       assert.match(second.outputVideoPath, /lesson \(2\)\.mp4$/)
-      assert.match(second.outputSubtitlePath, /lesson \(2\)\.srt$/)
+      assert.match(second.outputSubtitlePath ?? '', /lesson \(2\)\.srt$/)
     } finally {
       second.release()
       first.release()
+    }
+  })
+})
+
+test('reserveOutputTarget omits subtitle path for burned subtitle output', () => {
+  withTempDir((dir) => {
+    const target = reserveOutputTarget('C:\\videos\\lesson.mp4', dir, false, false)
+
+    try {
+      assert.match(target.outputVideoPath, /lesson\.mp4$/)
+      assert.equal(target.outputSubtitlePath, undefined)
+    } finally {
+      target.release()
     }
   })
 })
