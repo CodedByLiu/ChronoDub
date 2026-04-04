@@ -1,13 +1,18 @@
-import type { Cue, Segment, TimeWindow, MicrosecondTimestamp } from '../../types'
-import { synthesize } from './edge-tts'
-import { decodeMp3ToPcm, trimSilence, measurePcmDurationUs, writePcmToWav } from './ffmpeg'
+import type { Cue, MicrosecondTimestamp, Segment, TimeWindow } from '../../types'
 import { compressTranslation } from './deepseek'
+import { synthesize, synthesizeDetailed, type TtsBoundary } from './edge-tts'
+import {
+  decodeMp3ToPcm,
+  measurePcmDurationUs,
+  trimSilence,
+  trimSilenceDetailed,
+  writePcmToWav,
+} from './ffmpeg'
 
 const SR = 48000
 const SAFETY_GAP_US = 50_000
 const MERGE_GAP_US = 200_000
 const MAX_SEGMENT_DURATION_US = 7_000_000
-const SHORT_CUE_US = 800_000
 const FADE_MS = 10
 const FADE_SAMPLES = Math.round((FADE_MS / 1000) * SR)
 const MARGIN_SEC = 0.15
@@ -19,9 +24,16 @@ const HIGH_RISK_WINDOW_US = 1_800_000
 const MEDIUM_RISK_WINDOW_US = 2_800_000
 
 const STRONG_TERMINALS = /[.?!…。？！]+$/
-const TECH_TOKEN_RE = /\b(?:[A-Z][A-Za-z0-9_]*|[A-Za-z]+(?:[./#_-][A-Za-z0-9_]+)+|[A-Za-z]+\d+)\b/g
+const TECH_TOKEN_RE =
+  /\b(?:[A-Z][A-Za-z0-9_]*|[A-Za-z]+(?:[./#_-][A-Za-z0-9_]+)+|[A-Za-z]+\d+)\b/g
 
-// ─── 4.1 时间窗构建 ──────────────────────────────
+export interface AudioBoundary {
+  part: string
+  startUs: MicrosecondTimestamp
+  endUs: MicrosecondTimestamp
+}
+
+// 鈹€鈹€鈹€ 4.1 鏃堕棿绐楁瀯寤?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export function buildSegments(cues: Cue[]): Segment[] {
   if (cues.length === 0) return []
@@ -93,14 +105,14 @@ export function buildTimeWindows(
   return windows
 }
 
-// ─── 4.2 CPS 校准与字数预算 ──────────────────────
+// 鈹€鈹€鈹€ 4.2 CPS 鏍″噯涓庡瓧鏁伴绠?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 let cpsCache = new Map<string, number>()
 
 export async function calibrateCPS(voice: string): Promise<number> {
   if (cpsCache.has(voice)) return cpsCache.get(voice)!
 
-  const testText = '今天天气真不错，我们一起来学习编程技术。'
+  const testText = '浠婂ぉ澶╂皵鐪熶笉閿欙紝鎴戜滑涓€璧锋潵瀛︿範缂栫▼鎶€鏈€?'
   const mp3 = await synthesize(testText, voice)
   const pcm = await decodeMp3ToPcm(mp3)
   const trimmed = trimSilence(pcm)
@@ -123,21 +135,41 @@ export function assignBudgets(windows: TimeWindow[], cps: number): void {
   }
 }
 
-// ─── 4.3 音频时长测量与预处理 ────────────────────
+// 鈹€鈹€鈹€ 4.3 闊抽鏃堕暱娴嬮噺涓庨澶勭悊 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export interface ProcessedAudio {
   pcm: Buffer
   durationUs: MicrosecondTimestamp
+  spokenText: string
+  boundaries: AudioBoundary[]
+  leadTrimUs: MicrosecondTimestamp
 }
 
-export async function processAudio(mp3Buffer: Buffer): Promise<ProcessedAudio> {
+interface ProcessAudioOptions {
+  spokenText?: string
+  boundaries?: TtsBoundary[]
+}
+
+export async function processAudio(
+  mp3Buffer: Buffer,
+  options: ProcessAudioOptions = {}
+): Promise<ProcessedAudio> {
   const pcmRaw = await decodeMp3ToPcm(mp3Buffer, SR)
-  const pcm = trimSilence(pcmRaw, SR)
+  const trimmed = trimSilenceDetailed(pcmRaw, SR)
+  const leadTrimUs = samplesToUs(trimmed.startSample, SR)
+  const pcm = trimmed.buffer
   const durationUs = measurePcmDurationUs(pcm, SR)
-  return { pcm, durationUs }
+
+  return {
+    pcm,
+    durationUs,
+    spokenText: options.spokenText ?? '',
+    boundaries: normalizeBoundaries(options.boundaries ?? [], leadTrimUs, durationUs),
+    leadTrimUs,
+  }
 }
 
-// ─── 4.4 样本点域装配器 ──────────────────────────
+// 鈹€鈹€鈹€ 4.4 鏍锋湰鐐瑰煙瑁呴厤鍣?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export function applyFadeInOut(samples: Int16Array, fadeN: number): void {
   const len = samples.length
@@ -206,7 +238,7 @@ export async function assembleToWav(
   await writePcmToWav(pcm, outputPath, SR)
 }
 
-// ─── 4.5 回退策略级联 ────────────────────────────
+// 鈹€鈹€鈹€ 4.5 鍥為€€绛栫暐绾ц仈 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export interface FallbackContext {
   text: string
@@ -309,8 +341,11 @@ async function synthesizeProcessed(
   voice: string,
   rate = 'default'
 ): Promise<ProcessedAudio> {
-  const mp3 = await synthesize(text, voice, rate)
-  return processAudio(mp3)
+  const result = await synthesizeDetailed(text, voice, rate)
+  return processAudio(result.audio, {
+    spokenText: result.spokenText,
+    boundaries: result.boundaries,
+  })
 }
 
 function getSlightRateCandidates(overRatio: number): readonly string[] {
@@ -350,8 +385,8 @@ async function trySlightRateFallback(
   return { result: null, bestResult }
 }
 
-function trySplitToAdjacentWindows(ctx: FallbackContext, text: string): ProcessedAudio | null {
-  const splitPoints = /([，。；、！？,;!?])/
+function trySplitToAdjacentWindows(_ctx: FallbackContext, text: string): ProcessedAudio | null {
+  const splitPoints = /([,.;!?，。；、！？])/
   const parts = text.split(splitPoints).filter(Boolean)
   if (parts.length < 2) return null
 
@@ -389,13 +424,47 @@ function hardClip(audio: ProcessedAudio, windowUs: MicrosecondTimestamp): Proces
     samples[idx] = Math.round(samples[idx] * gain)
   }
 
+  const durationUs = measurePcmDurationUs(clipped, SR)
+
   return {
     pcm: clipped,
-    durationUs: measurePcmDurationUs(clipped, SR),
+    durationUs,
+    spokenText: audio.spokenText,
+    boundaries: audio.boundaries
+      .map((boundary) => ({
+        ...boundary,
+        startUs: Math.min(boundary.startUs, durationUs),
+        endUs: Math.min(boundary.endUs, durationUs),
+      }))
+      .filter((boundary) => boundary.endUs > boundary.startUs),
+    leadTrimUs: audio.leadTrimUs,
   }
 }
 
-// ─── 工具函数 ────────────────────────────────────
+function normalizeBoundaries(
+  boundaries: TtsBoundary[],
+  leadTrimUs: MicrosecondTimestamp,
+  durationUs: MicrosecondTimestamp
+): AudioBoundary[] {
+  return boundaries
+    .map((boundary) => ({
+      part: boundary.part,
+      startUs: Math.max(0, boundary.startMs * 1000 - leadTrimUs),
+      endUs: Math.max(0, boundary.endMs * 1000 - leadTrimUs),
+    }))
+    .map((boundary) => ({
+      ...boundary,
+      startUs: Math.min(boundary.startUs, durationUs),
+      endUs: Math.min(boundary.endUs, durationUs),
+    }))
+    .filter((boundary) => boundary.part.trim() && boundary.endUs > boundary.startUs)
+}
+
+function samplesToUs(samples: number, sampleRate: number): MicrosecondTimestamp {
+  return Math.round((samples / sampleRate) * 1_000_000)
+}
+
+// 鈹€鈹€鈹€ 宸ュ叿鍑芥暟 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export function resetCpsCache(): void {
   cpsCache = new Map()

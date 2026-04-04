@@ -83,8 +83,13 @@ export function SubtitleEditor() {
 
   useEffect(() => {
     if (!editingTaskId || !cueState?.chineseCues?.length) return
-    setLocalCues((prev) => (prev.length === 0 ? cueState.chineseCues!.map((c) => ({ ...c })) : prev))
-  }, [editingTaskId, cueState?.chineseCues])
+    setLocalCues((prev) => {
+      if (!isEditable || prev.length === 0) {
+        return cueState.chineseCues!.map((c) => ({ ...c }))
+      }
+      return prev
+    })
+  }, [editingTaskId, cueState?.chineseCues, isEditable])
 
   useEffect(() => {
     if (

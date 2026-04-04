@@ -25,7 +25,7 @@ interface AppState {
   removeTask: (id: string) => void
   clearTasks: () => void
   updateTaskStatus: (id: string, status: TaskStatus, progress?: number, detail?: string) => void
-  updateTaskError: (id: string, error: string) => void
+  updateTaskError: (id: string, error: string, errorDetail?: string) => void
   updateTaskSubtitlePath: (id: string, subtitlePath: string) => void
   replaceTaskSubtitlePath: (id: string, subtitlePath: string) => void
   updateTaskCues: (id: string, englishCues?: Cue[], chineseCues?: Cue[]) => void
@@ -108,20 +108,28 @@ export const useAppStore = create<AppState>((set) => ({
           status,
           ...(progress !== undefined ? { progress } : {}),
           ...(detail !== undefined ? { detail } : { detail: undefined }),
+          ...(status !== 'error' ? { error: undefined, errorDetail: undefined } : {}),
           ...(statusChanged || detailChanged ? { statusUpdatedAt: Date.now() } : {}),
         }
       })
       return changed ? { tasks } : state
     }),
 
-  updateTaskError: (id, error) =>
+  updateTaskError: (id, error, errorDetail) =>
     set((state) => {
       let changed = false
       const tasks = state.tasks.map((t) => {
         if (t.id !== id) return t
-        if (t.status === 'error' && t.error === error) return t
+        if (t.status === 'error' && t.error === error && t.errorDetail === errorDetail) return t
         changed = true
-        return { ...t, status: 'error' as TaskStatus, error, detail: undefined, statusUpdatedAt: Date.now() }
+        return {
+          ...t,
+          status: 'error' as TaskStatus,
+          error,
+          errorDetail,
+          detail: undefined,
+          statusUpdatedAt: Date.now(),
+        }
       })
       return changed ? { tasks } : state
     }),
@@ -159,6 +167,7 @@ export const useAppStore = create<AppState>((set) => ({
           status: 'waiting' as TaskStatus,
           progress: 0,
           error: undefined,
+          errorDetail: undefined,
           detail: undefined,
           statusUpdatedAt: Date.now(),
           countdownRemaining: undefined,

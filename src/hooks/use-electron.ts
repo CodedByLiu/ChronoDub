@@ -18,14 +18,19 @@ export function useIpcListeners() {
       updateTaskStatus(taskId, 'reviewing')
     })
 
-    const unsubError = window.api?.task.onError((taskId, message) => {
-      updateTaskError(taskId, message)
+    const unsubCuesUpdated = window.api?.task.onCuesUpdated((taskId, englishCues, chineseCues) => {
+      updateTaskCues(taskId, englishCues, chineseCues)
+    })
+
+    const unsubError = window.api?.task.onError((taskId, message, detail) => {
+      updateTaskError(taskId, message, detail)
     })
 
     return () => {
       unsubProgress?.()
       unsubCountdown?.()
       unsubReviewReady?.()
+      unsubCuesUpdated?.()
       unsubError?.()
     }
   }, [])

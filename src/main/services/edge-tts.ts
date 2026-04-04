@@ -1,5 +1,5 @@
 import { EdgeTTS } from 'node-edge-tts'
-import { readFileSync, unlinkSync, existsSync } from 'fs'
+import { existsSync, readFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomBytes } from 'crypto'
@@ -18,6 +18,18 @@ interface VoiceInfo {
   name: string
   locale: string
   gender: string
+}
+
+export interface TtsBoundary {
+  part: string
+  startMs: number
+  endMs: number
+}
+
+export interface TtsSynthesisResult {
+  audio: Buffer
+  boundaries: TtsBoundary[]
+  spokenText: string
 }
 
 let cachedVoices: VoiceInfo[] | null = null
@@ -75,9 +87,21 @@ export async function synthesize(
   volume = 'default',
   pitch = 'default'
 ): Promise<Buffer> {
+  const result = await synthesizeDetailed(text, voice, rate, volume, pitch)
+  return result.audio
+}
+
+export async function synthesizeDetailed(
+  text: string,
+  voice: string,
+  rate = 'default',
+  volume = 'default',
+  pitch = 'default'
+): Promise<TtsSynthesisResult> {
   if (!voice?.trim()) {
     throw new Error('未选择 TTS 声音')
   }
+
   return limit(() => synthesizeWithRetry(text, voice, rate, volume, pitch))
 }
 
@@ -87,15 +111,18 @@ async function synthesizeWithRetry(
   rate: string,
   volume: string,
   pitch: string
-): Promise<Buffer> {
+): Promise<TtsSynthesisResult> {
   let lastError: Error | null = null
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     const tmpPath = tempMp3Path()
+    const tmpSubtitlePath = `${tmpPath}.json`
+
     try {
       const tts = new EdgeTTS({
         voice,
         outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
+        saveSubtitles: true,
         rate,
         pitch,
         volume,
@@ -106,18 +133,21 @@ async function synthesizeWithRetry(
 
       if (!existsSync(tmpPath)) throw new Error('TTS 未生成音频文件')
 
-      const buf = readFileSync(tmpPath)
-      if (buf.length === 0) throw new Error('TTS 生成空音频文件')
+      const audio = readFileSync(tmpPath)
+      if (audio.length === 0) throw new Error('TTS 生成空音频文件')
 
-      return buf
+      return {
+        audio,
+        boundaries: loadBoundaryFile(tmpSubtitlePath),
+        spokenText: text,
+      }
     } catch (err: any) {
       lastError = err
       const backoff = INITIAL_BACKOFF_MS * Math.pow(2, attempt)
-      await new Promise((r) => setTimeout(r, backoff))
+      await new Promise((resolve) => setTimeout(resolve, backoff))
     } finally {
-      try {
-        if (existsSync(tmpPath)) unlinkSync(tmpPath)
-      } catch {}
+      safeUnlink(tmpPath)
+      safeUnlink(tmpSubtitlePath)
     }
   }
 
@@ -127,4 +157,34 @@ async function synthesizeWithRetry(
 export async function synthesizeToBuffer(text: string, voice: string): Promise<ArrayBuffer> {
   const buf = await synthesize(text, voice)
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer
+}
+
+function loadBoundaryFile(filePath: string): TtsBoundary[] {
+  if (!existsSync(filePath)) return []
+
+  try {
+    const raw = JSON.parse(readFileSync(filePath, 'utf-8')) as Array<{
+      part?: unknown
+      start?: unknown
+      end?: unknown
+    }>
+
+    return raw
+      .map((item) => ({
+        part: typeof item.part === 'string' ? item.part : '',
+        startMs: typeof item.start === 'number' ? item.start : 0,
+        endMs: typeof item.end === 'number' ? item.end : 0,
+      }))
+      .filter((item) => item.part.trim() && item.endMs > item.startMs)
+  } catch {
+    return []
+  }
+}
+
+function safeUnlink(filePath: string): void {
+  try {
+    if (existsSync(filePath)) unlinkSync(filePath)
+  } catch {
+    /* noop */
+  }
 }

@@ -72,9 +72,23 @@ const api: IpcApi = {
       ipcRenderer.on('task:review-ready', handler)
       return () => ipcRenderer.removeListener('task:review-ready', handler)
     },
+    onCuesUpdated: (callback) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        taskId: string,
+        englishCues?: any[],
+        chineseCues?: any[]
+      ) => callback(taskId, englishCues, chineseCues)
+      ipcRenderer.on('task:cues-updated', handler)
+      return () => ipcRenderer.removeListener('task:cues-updated', handler)
+    },
     onError: (callback) => {
-      const handler = (_event: Electron.IpcRendererEvent, taskId: string, message: string) =>
-        callback(taskId, message)
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        taskId: string,
+        message: string,
+        detail?: string
+      ) => callback(taskId, message, detail)
       ipcRenderer.on('task:error', handler)
       return () => ipcRenderer.removeListener('task:error', handler)
     },

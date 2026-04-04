@@ -33,6 +33,7 @@ function sanitizeTaskSnapshot(task: VideoTask): VideoTask {
     detail,
     countdownRemaining,
     error,
+    errorDetail,
   } = task
 
   return {
@@ -45,6 +46,7 @@ function sanitizeTaskSnapshot(task: VideoTask): VideoTask {
     ...(detail ? { detail } : {}),
     ...(countdownRemaining !== undefined ? { countdownRemaining } : {}),
     ...(error ? { error } : {}),
+    ...(errorDetail ? { errorDetail } : {}),
   }
 }
 

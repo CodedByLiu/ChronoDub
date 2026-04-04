@@ -13,6 +13,7 @@ function cloneTask(task: VideoTask): VideoTask {
     ...task,
     ...(task.detail ? { detail: task.detail } : {}),
     ...(task.error ? { error: task.error } : {}),
+    ...(task.errorDetail ? { errorDetail: task.errorDetail } : {}),
     ...(task.countdownRemaining !== undefined ? { countdownRemaining: task.countdownRemaining } : {}),
   }
 }
@@ -28,7 +29,8 @@ function isSameTaskSnapshot(a: VideoTask | undefined, b: VideoTask): boolean {
     a.progress === b.progress &&
     a.detail === b.detail &&
     a.countdownRemaining === b.countdownRemaining &&
-    a.error === b.error
+    a.error === b.error &&
+    a.errorDetail === b.errorDetail
   )
 }
 
@@ -105,16 +107,18 @@ export function updateTaskStatusSnapshot(
     status,
     progress,
     ...(detail !== undefined ? { detail } : { detail: undefined }),
+    ...(status !== 'error' ? { error: undefined, errorDetail: undefined } : {}),
     ...(status !== 'reviewing' && status !== 'paused' ? { countdownRemaining: undefined } : {}),
   }))
 }
 
-export function updateTaskErrorSnapshot(taskId: string, message: string): void {
+export function updateTaskErrorSnapshot(taskId: string, message: string, detail?: string): void {
   updateTaskSnapshot(taskId, (task) => ({
     ...task,
     status: 'error',
     progress: 0,
     error: message,
+    ...(detail !== undefined ? { errorDetail: detail } : { errorDetail: undefined }),
     detail: undefined,
     countdownRemaining: undefined,
   }))
@@ -136,6 +140,7 @@ export function replaceTaskSubtitlePathSnapshot(taskId: string, subtitlePath: st
     progress: 0,
     detail: undefined,
     error: undefined,
+    errorDetail: undefined,
     countdownRemaining: undefined,
   }))
 }

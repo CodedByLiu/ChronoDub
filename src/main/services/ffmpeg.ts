@@ -92,9 +92,30 @@ export function trimSilence(
   thresholdDb = -40,
   minDurationMs = 60
 ): Buffer {
+  return trimSilenceDetailed(pcmBuffer, sampleRate, thresholdDb, minDurationMs).buffer
+}
+
+export interface TrimSilenceResult {
+  buffer: Buffer
+  startSample: number
+  endSample: number
+}
+
+export function trimSilenceDetailed(
+  pcmBuffer: Buffer,
+  sampleRate = 48000,
+  thresholdDb = -40,
+  minDurationMs = 60
+): TrimSilenceResult {
   const samples = new Int16Array(pcmBuffer.buffer, pcmBuffer.byteOffset, pcmBuffer.byteLength / 2)
   const totalSamples = samples.length
-  if (totalSamples === 0) return pcmBuffer
+  if (totalSamples === 0) {
+    return {
+      buffer: pcmBuffer,
+      startSample: 0,
+      endSample: 0,
+    }
+  }
 
   const threshold = Math.pow(10, thresholdDb / 20) * 32768
   const frameSamples = Math.round((20 / 1000) * sampleRate) // 20ms frame
@@ -114,7 +135,11 @@ export function trimSilence(
     }
     silentFrames++
     if (silentFrames >= Math.ceil(totalSamples / frameSamples)) {
-      return Buffer.alloc(0)
+      return {
+        buffer: Buffer.alloc(0),
+        startSample: totalSamples,
+        endSample: totalSamples,
+      }
     }
   }
 
@@ -134,13 +159,23 @@ export function trimSilence(
     }
   }
 
-  if (startSample >= endSample) return Buffer.alloc(0)
+  if (startSample >= endSample) {
+    return {
+      buffer: Buffer.alloc(0),
+      startSample,
+      endSample,
+    }
+  }
 
-  return Buffer.from(
-    samples.buffer,
-    samples.byteOffset + startSample * 2,
-    (endSample - startSample) * 2
-  )
+  return {
+    buffer: Buffer.from(
+      samples.buffer,
+      samples.byteOffset + startSample * 2,
+      (endSample - startSample) * 2
+    ),
+    startSample,
+    endSample,
+  }
 }
 
 function computeRms(samples: Int16Array, start: number, end: number): number {

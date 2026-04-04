@@ -54,6 +54,7 @@ export interface VideoTask {
   statusUpdatedAt?: number
   countdownRemaining?: number
   error?: string
+  errorDetail?: string
   englishCues?: Cue[]
   chineseCues?: Cue[]
 }
@@ -150,7 +151,10 @@ export interface IpcApi {
     onReviewReady: (
       callback: (taskId: string, englishCues: Cue[], chineseCues: Cue[]) => void
     ) => () => void
-    onError: (callback: (taskId: string, message: string) => void) => () => void
+    onCuesUpdated: (
+      callback: (taskId: string, englishCues?: Cue[], chineseCues?: Cue[]) => void
+    ) => () => void
+    onError: (callback: (taskId: string, message: string, detail?: string) => void) => () => void
   }
 }
 

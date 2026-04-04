@@ -243,11 +243,22 @@ const VideoTaskRow = memo(function VideoTaskRow({
             </div>
           )}
 
-          {task.error && (
-            <p className="truncate text-xs text-red-400" title={task.error}>
-              {task.error}
-            </p>
-          )}
+          {task.error &&
+            (task.errorDetail && task.errorDetail !== task.error ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="truncate cursor-help text-xs text-red-400">{task.error}</p>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[520px] whitespace-pre-wrap break-all">
+                  <p className="text-xs text-red-300">{task.error}</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{task.errorDetail}</p>
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <p className="truncate text-xs text-red-400" title={task.error}>
+                {task.error}
+              </p>
+            ))}
 
           {!task.error && task.detail && (
             <p className="truncate text-xs text-muted-foreground" title={task.detail}>
