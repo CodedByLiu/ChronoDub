@@ -137,6 +137,18 @@ const VideoTaskRow = memo(function VideoTaskRow({
           继续
         </Button>
       )
+    } else if (task.status === 'error' && task.subtitlePath) {
+      buttons.push(
+        <Button
+          key="retry"
+          variant="outline"
+          size="xs"
+          onClick={() => window.api?.task.resume(task.id)}
+        >
+          <Play className="size-3" />
+          重试
+        </Button>
+      )
     }
 
     buttons.push(

@@ -1,7 +1,7 @@
 import { useAppStore } from '../stores/app-store'
 import { Button } from './ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
-import { Upload, Trash2, FolderOpen, Play, Pause, PanelLeft } from 'lucide-react'
+import { Upload, Trash2, FolderOpen, Play, Pause, PanelLeft, RotateCcw } from 'lucide-react'
 import type { TaskStatus, VideoTask } from '../types'
 
 const IN_FLIGHT_STATUSES: TaskStatus[] = [
@@ -45,6 +45,10 @@ export function ActionBar() {
   const hasRunningTasks = tasks.some((t) => RUNNING_STATUSES.includes(t.status))
   const pausedTaskIds = tasks.filter((t) => t.status === 'paused').map((t) => t.id)
   const hasPausedTasks = pausedTaskIds.length > 0
+  const failedTaskIds = tasks
+    .filter((t) => t.status === 'error' && !!t.subtitlePath)
+    .map((t) => t.id)
+  const hasFailedTasks = failedTaskIds.length > 0
 
   const handleImport = async () => {
     const filePaths = await window.api?.dialog.openVideos()
@@ -129,6 +133,11 @@ export function ActionBar() {
     window.api?.task.resumeAll(pausedTaskIds)
   }
 
+  const handleRetryFailed = () => {
+    if (!hasFailedTasks) return
+    window.api?.task.resumeAll(failedTaskIds)
+  }
+
   const handleClear = () => {
     if (!hasTasks) return
     const hasActive = tasks.some((t) => IN_FLIGHT_STATUSES.includes(t.status))
@@ -210,6 +219,18 @@ export function ActionBar() {
           </Button>
         </TooltipTrigger>
         <TooltipContent>{config.outputDir || '选择输出目录'}</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="outline" size="sm" onClick={handleRetryFailed} disabled={!hasFailedTasks}>
+            <RotateCcw className="size-4" />
+            重试失败任务
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {hasFailedTasks ? '重新开始所有失败且已关联字幕的任务' : '当前没有可重试的失败任务'}
+        </TooltipContent>
       </Tooltip>
 
       <div className="flex-1" />

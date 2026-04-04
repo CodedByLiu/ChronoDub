@@ -106,6 +106,9 @@ function getTaskState(taskId: string): TaskState {
 function cleanupTask(taskId: string): void {
   const state = activeTasks.get(taskId)
   if (state) clearReviewCountdown(state)
+  if (state?.cancelled) {
+    void deleteTaskCues(taskId)
+  }
   activeTasks.delete(taskId)
   removeQueuedResumeTask(taskId)
   updateSleepBlocker()
