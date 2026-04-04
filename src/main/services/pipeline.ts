@@ -1282,7 +1282,9 @@ export async function runPipeline(
     reportProgress(taskId, 'encoding', 88, '正在封装输出视频')
     const videoName = basename(videoPath, extname(videoPath))
     const videoExt = extname(videoPath)
-    const outputDir = join(config.outputDir, videoName)
+    const outputDir = config.createVideoSubfolder
+      ? join(config.outputDir, videoName)
+      : config.outputDir
     mkdirSync(outputDir, { recursive: true })
 
     const outputVideoPath = join(outputDir, videoName + videoExt)

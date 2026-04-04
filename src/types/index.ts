@@ -64,6 +64,7 @@ export interface AppConfig {
   dictionary: Array<{ en: string; zh: string }>
   selectedVoice: string
   outputDir: string
+  createVideoSubfolder: boolean
   reviewMode: ReviewMode
   autoReviewCountdown: number
   maxConcurrentTasks: ConcurrencyOption
@@ -74,6 +75,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   dictionary: [],
   selectedVoice: '',
   outputDir: '',
+  createVideoSubfolder: true,
   reviewMode: 'auto',
   autoReviewCountdown: 30,
   maxConcurrentTasks: 2,

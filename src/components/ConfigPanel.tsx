@@ -156,7 +156,7 @@ export function ConfigPanel() {
   }, [config.deepseekKey, deepseekKeyTesting])
 
   return (
-    <div className="w-[360px] h-full flex flex-col border-r border-border bg-sidebar">
+    <div className="flex h-full min-h-0 w-[360px] flex-col overflow-hidden border-r border-border bg-sidebar">
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
         <h2 className="font-semibold text-lg">配置</h2>
         <Button variant="ghost" size="icon-sm" onClick={toggleSidebar}>
@@ -164,7 +164,7 @@ export function ConfigPanel() {
         </Button>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="p-4 space-y-6">
           <div className="space-y-2">
             <Label>DeepSeek API Key</Label>
@@ -423,6 +423,26 @@ export function ConfigPanel() {
                 <span className="text-sm text-muted-foreground">秒</span>
               </div>
             )}
+          </div>
+
+          <Separator />
+
+          <div className="space-y-3">
+            <Label>输出组织</Label>
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border bg-background/40 px-3 py-2">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                checked={config.createVideoSubfolder}
+                onChange={(e) => setConfig({ createVideoSubfolder: e.target.checked })}
+              />
+              <div className="space-y-1">
+                <div className="text-sm">为每个视频单独创建文件夹</div>
+                <p className="text-xs text-muted-foreground">
+                  开启后，视频和字幕放进各自子文件夹；关闭后，所有输出直接放在所选输出目录下。
+                </p>
+              </div>
+            </label>
           </div>
         </div>
       </ScrollArea>

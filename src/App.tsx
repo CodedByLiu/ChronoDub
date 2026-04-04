@@ -50,7 +50,7 @@ export default function App() {
     <TooltipProvider>
       <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground antialiased">
         <div
-          className="shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out"
+          className="min-h-0 shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out"
           style={{ width: sidebarOpen ? 360 : 0 }}
         >
           <ConfigPanel />
