@@ -89,7 +89,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('subtitle:detect', async (_event, videoPath: string) => {
-    return detectSubtitleForVideo(videoPath)
+    return await detectSubtitleForVideo(videoPath)
   })
 
   ipcMain.handle('tts:get-voices', async () => {

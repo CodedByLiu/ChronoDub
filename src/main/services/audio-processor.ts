@@ -333,7 +333,7 @@ export async function synthesizeWithFallback(ctx: FallbackContext): Promise<Proc
   if (splitResult) return splitResult
 
   // Final safety net: keep the timeline strict even if quality must degrade.
-  return hardClip(bestResult, ctx.windowUs)
+  return clipProcessedAudioToWindow(bestResult, ctx.windowUs)
 }
 
 async function synthesizeProcessed(
@@ -406,7 +406,86 @@ function trySplitToAdjacentWindows(_ctx: FallbackContext, text: string): Process
   return null
 }
 
-function hardClip(audio: ProcessedAudio, windowUs: MicrosecondTimestamp): ProcessedAudio {
+function truncateBoundaryPart(
+  part: string,
+  boundaryStartUs: MicrosecondTimestamp,
+  boundaryEndUs: MicrosecondTimestamp,
+  clipEndUs: MicrosecondTimestamp
+): string {
+  if (clipEndUs >= boundaryEndUs) return part
+
+  const chars = Array.from(part)
+  if (chars.length === 0) return part
+
+  const visibleDurationUs = Math.max(0, clipEndUs - boundaryStartUs)
+  const boundaryDurationUs = Math.max(1, boundaryEndUs - boundaryStartUs)
+  const ratio = Math.max(0, Math.min(1, visibleDurationUs / boundaryDurationUs))
+  const hasAsciiWords = /[A-Za-z]/.test(part)
+  const approxKeepChars = Math.floor(chars.length * ratio)
+
+  if (approxKeepChars <= 0) return ''
+  if (ratio < 0.2) return ''
+
+  const naturalCut = findNaturalTextCutIndex(chars, approxKeepChars)
+  if (naturalCut > 0) return chars.slice(0, naturalCut).join('').trimEnd()
+
+  if (hasAsciiWords && ratio < 0.75) return ''
+  if (!hasAsciiWords && ratio < 0.4) return ''
+
+  return chars.slice(0, Math.max(1, approxKeepChars)).join('').trimEnd()
+}
+
+const CLIP_CUT_AFTER_RE = /[\s,.;:!?\uFF0C\u3002\uFF1B\uFF1A\uFF01\uFF1F\u3001\uFF09)\]}]/
+const CLIP_CUT_BEFORE_RE = /[\s\uFF08([{]/
+
+function isClipSafeBoundary(chars: string[], index: number): boolean {
+  const prev = chars[index - 1]
+  const next = chars[index]
+  if (!prev || !next) return true
+  return !(/[A-Za-z0-9_./#+-]/.test(prev) && /[A-Za-z0-9_./#+-]/.test(next))
+}
+
+function isClipPreferredBoundary(chars: string[], index: number): boolean {
+  const prev = chars[index - 1]
+  const next = chars[index]
+  if (!prev || !next) return true
+  if (CLIP_CUT_AFTER_RE.test(prev) || CLIP_CUT_BEFORE_RE.test(next)) return true
+  return isClipSafeBoundary(chars, index)
+}
+
+function findNaturalTextCutIndex(chars: string[], target: number): number {
+  const clamped = Math.max(1, Math.min(chars.length, target))
+  const maxRadius = Math.max(clamped - 1, chars.length - clamped)
+
+  for (let radius = 0; radius <= maxRadius; radius++) {
+    const left = clamped - radius
+    const right = clamped + radius
+
+    if (left >= 1 && left < chars.length && isClipPreferredBoundary(chars, left)) return left
+    if (
+      right < chars.length &&
+      right !== left &&
+      isClipPreferredBoundary(chars, right)
+    ) {
+      return right
+    }
+  }
+
+  for (let radius = 0; radius <= maxRadius; radius++) {
+    const left = clamped - radius
+    const right = clamped + radius
+
+    if (left >= 1 && left < chars.length && isClipSafeBoundary(chars, left)) return left
+    if (right < chars.length && right !== left && isClipSafeBoundary(chars, right)) return right
+  }
+
+  return 0
+}
+
+export function clipProcessedAudioToWindow(
+  audio: ProcessedAudio,
+  windowUs: MicrosecondTimestamp
+): ProcessedAudio {
   const maxSamples = Math.round((windowUs / 1_000_000) * SR)
   const maxBytes = maxSamples * 2
 
@@ -425,18 +504,22 @@ function hardClip(audio: ProcessedAudio, windowUs: MicrosecondTimestamp): Proces
   }
 
   const durationUs = measurePcmDurationUs(clipped, SR)
+  const clippedBoundaries = audio.boundaries
+    .map((boundary) => ({
+      ...boundary,
+      part: truncateBoundaryPart(boundary.part, boundary.startUs, boundary.endUs, durationUs),
+      startUs: Math.min(boundary.startUs, durationUs),
+      endUs: Math.min(boundary.endUs, durationUs),
+    }))
+    .filter((boundary) => boundary.part.trim() && boundary.endUs > boundary.startUs)
 
   return {
     pcm: clipped,
     durationUs,
-    spokenText: audio.spokenText,
-    boundaries: audio.boundaries
-      .map((boundary) => ({
-        ...boundary,
-        startUs: Math.min(boundary.startUs, durationUs),
-        endUs: Math.min(boundary.endUs, durationUs),
-      }))
-      .filter((boundary) => boundary.endUs > boundary.startUs),
+    spokenText:
+      clippedBoundaries.map((boundary) => boundary.part).join('') ||
+      (audio.boundaries.length === 0 ? audio.spokenText : ''),
+    boundaries: clippedBoundaries,
     leadTrimUs: audio.leadTrimUs,
   }
 }

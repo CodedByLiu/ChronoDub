@@ -8,7 +8,10 @@ const MS_TO_US = 1000
 export function parseSubtitleFile(filePath: string): Cue[] {
   const ext = extname(filePath).toLowerCase()
   const content = readFileSync(filePath, 'utf-8')
+  return parseSubtitleContent(content, ext)
+}
 
+export function parseSubtitleContent(content: string, ext: string): Cue[] {
   if (ext === '.ass' || ext === '.ssa') {
     return parseASS(content)
   }

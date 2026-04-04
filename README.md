@@ -16,7 +16,7 @@ ChronoDub combines subtitle parsing, DeepSeek translation, Edge TTS synthesis, a
 
 It is designed around practical dubbing constraints:
 
-- keep subtitle timing fixed
+- keep subtitle windows as anchors, then retime cues against actual synthesized speech boundaries
 - keep speech inside the available subtitle window
 - avoid overlap between adjacent voice segments
 - preserve technical meaning while making Chinese narration read more naturally
@@ -37,9 +37,9 @@ This makes it suitable for tutorial videos, technical walkthroughs, and other na
 
 ## Workflow
 
-ChronoDub treats subtitle timestamps as hard anchors.
+ChronoDub uses subtitle windows as anchors, then fine-tunes cue timing after synthesis using actual speech boundaries.
 
-1. Import video files and detect matching subtitle files.
+1. Import video files and detect subtitle candidates, using both naming and subtitle content to prefer the original English track.
 2. Parse subtitles and merge cues into synthesis-friendly timing segments.
 3. Estimate text budgets from measured voice speed.
 4. Translate each segment into natural, accurate Chinese.
@@ -171,10 +171,20 @@ npm run dist
 
 ## Output Layout
 
-For an input video named `MyVideo.mp4`, ChronoDub writes:
+For an input video named `MyVideo.mp4`, ChronoDub supports two output layouts.
+
+Default layout:
 
 ```text
 <outputDir>/MyVideo/
+  MyVideo.mp4
+  MyVideo.srt
+```
+
+When "Create a subfolder for each video" is disabled:
+
+```text
+<outputDir>/
   MyVideo.mp4
   MyVideo.srt
 ```
@@ -201,7 +211,7 @@ scripts/
 
 ## Troubleshooting
 
-- If subtitle auto-detection fails, confirm the subtitle file is next to the video and uses a supported naming pattern.
+- If subtitle auto-detection fails, confirm the subtitle file is next to the video and that its content is actually the original English subtitle track.
 - If translation fails, verify the DeepSeek API key and API connectivity.
 - If TTS fails, check network access and test the configured Edge voice in the app first.
 - If muxing fails, confirm `ffmpeg` and `ffprobe` are installed and discoverable.
