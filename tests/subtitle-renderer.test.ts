@@ -15,6 +15,7 @@ const baseStyle: SubtitleStyleConfig = {
   backgroundEnabled: false,
   backgroundColor: '#000000',
   backgroundOpacity: 55,
+  backgroundPadding: 0,
   position: 'bottom-safe',
   safeMargin: 72,
 }
@@ -69,4 +70,15 @@ test('renderAssSubtitles adapts play resolution and typography to the current vi
   assert.match(ass, /PlayResY: 720/)
   assert.match(ass, /Style: Default,Arial,32,/)
   assert.match(ass, /,2,120,120,48,1/)
+})
+
+test('renderAssSubtitles expands the background box when background padding is set', () => {
+  const ass = renderAssSubtitles(cues, {
+    ...baseStyle,
+    backgroundEnabled: true,
+    outlineEnabled: false,
+    backgroundPadding: 12,
+  })
+
+  assert.match(ass, /,4,12,4,2,120,120,72,1/)
 })

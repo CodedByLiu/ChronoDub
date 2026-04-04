@@ -32,6 +32,7 @@ export interface SubtitleStyleConfig {
   backgroundEnabled: boolean
   backgroundColor: string
   backgroundOpacity: number
+  backgroundPadding: number
   position: SubtitlePosition
   safeMargin: number
 }
@@ -102,6 +103,7 @@ export const DEFAULT_SUBTITLE_STYLE: SubtitleStyleConfig = {
   backgroundEnabled: true,
   backgroundColor: '#000000',
   backgroundOpacity: 70,
+  backgroundPadding: 6,
   position: 'bottom-safe',
   safeMargin: 72,
 }

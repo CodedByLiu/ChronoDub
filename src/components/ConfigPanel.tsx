@@ -37,7 +37,12 @@ interface Voice {
   gender: string
 }
 
-type SubtitleNumberField = 'fontSize' | 'outlineWidth' | 'backgroundOpacity' | 'safeMargin'
+type SubtitleNumberField =
+  | 'fontSize'
+  | 'outlineWidth'
+  | 'backgroundOpacity'
+  | 'backgroundPadding'
+  | 'safeMargin'
 
 const VOICE_CN_NAMES: Record<string, string> = {
   'zh-CN-XiaoxiaoNeural': '晓晓',
@@ -94,6 +99,7 @@ const SUBTITLE_NUMBER_LIMITS: Record<SubtitleNumberField, { min: number; max: nu
   fontSize: { min: 20, max: 120 },
   outlineWidth: { min: 0, max: 12 },
   backgroundOpacity: { min: 0, max: 100 },
+  backgroundPadding: { min: 0, max: 24 },
   safeMargin: { min: 24, max: 240 },
 }
 
@@ -122,10 +128,11 @@ function digitsOnly(value: string): string {
 
 function buildSubtitleNumberDrafts(style: SubtitleStyleConfig): Record<SubtitleNumberField, string> {
   return {
-    fontSize: String(style.fontSize),
-    outlineWidth: String(style.outlineWidth),
-    backgroundOpacity: String(style.backgroundOpacity),
-    safeMargin: String(style.safeMargin),
+    fontSize: String(style.fontSize ?? DEFAULT_SUBTITLE_STYLE.fontSize),
+    outlineWidth: String(style.outlineWidth ?? DEFAULT_SUBTITLE_STYLE.outlineWidth),
+    backgroundOpacity: String(style.backgroundOpacity ?? DEFAULT_SUBTITLE_STYLE.backgroundOpacity),
+    backgroundPadding: String(style.backgroundPadding ?? DEFAULT_SUBTITLE_STYLE.backgroundPadding),
+    safeMargin: String(style.safeMargin ?? DEFAULT_SUBTITLE_STYLE.safeMargin),
   }
 }
 
@@ -180,6 +187,7 @@ export function ConfigPanel() {
     (partial: Partial<SubtitleStyleConfig>) => {
       setConfig({
         subtitleStyle: {
+          ...DEFAULT_SUBTITLE_STYLE,
           ...config.subtitleStyle,
           ...partial,
         },
@@ -299,7 +307,7 @@ export function ConfigPanel() {
   const commitSubtitleNumberField = useCallback(
     (field: SubtitleNumberField) => {
       const limits = SUBTITLE_NUMBER_LIMITS[field]
-      const fallback = config.subtitleStyle[field]
+      const fallback = config.subtitleStyle[field] ?? DEFAULT_SUBTITLE_STYLE[field]
       const nextValue = clampNumber(subtitleNumberDrafts[field], fallback, limits.min, limits.max)
       setSubtitleStyle({ [field]: nextValue } as Partial<SubtitleStyleConfig>)
       setSubtitleNumberDrafts((state) => ({ ...state, [field]: String(nextValue) }))
@@ -619,6 +627,21 @@ export function ConfigPanel() {
                         onBlur={() => commitSubtitleNumberField('backgroundOpacity')}
                         onKeyDown={(e) =>
                           e.key === 'Enter' && commitSubtitleNumberField('backgroundOpacity')
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>背景内边距</Label>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        value={subtitleNumberDrafts.backgroundPadding}
+                        onChange={(e) =>
+                          handleSubtitleNumberDraftChange('backgroundPadding', e.target.value)
+                        }
+                        onBlur={() => commitSubtitleNumberField('backgroundPadding')}
+                        onKeyDown={(e) =>
+                          e.key === 'Enter' && commitSubtitleNumberField('backgroundPadding')
                         }
                       />
                     </div>

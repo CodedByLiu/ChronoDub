@@ -79,6 +79,12 @@ export function renderAssSubtitles(
   const outlineWidth = style.outlineEnabled
     ? Math.max(0, scaleToRenderHeight(style.outlineWidth, renderTarget.height))
     : 0
+  const backgroundPadding = style.backgroundEnabled
+    ? Math.max(0, scaleToRenderHeight(style.backgroundPadding ?? 0, renderTarget.height))
+    : 0
+  const effectiveOutlineWidth = style.backgroundEnabled
+    ? outlineWidth + backgroundPadding
+    : outlineWidth
   const alignment = getAssAlignment(style.position)
   const marginV = Math.max(24, scaleToRenderHeight(style.safeMargin, renderTarget.height))
   const primaryColor = toAssColor(style.textColor)
@@ -99,7 +105,7 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontFamily},${resolvedFontSize},${primaryColor},${primaryColor},${outlineColor},${backColor},${bold},${italic},0,0,100,100,0,0,${borderStyle},${outlineWidth},${shadowSize},${alignment},120,120,${marginV},1
+Style: Default,${fontFamily},${resolvedFontSize},${primaryColor},${primaryColor},${outlineColor},${backColor},${bold},${italic},0,0,100,100,0,0,${borderStyle},${effectiveOutlineWidth},${shadowSize},${alignment},120,120,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
