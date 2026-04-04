@@ -4,6 +4,7 @@ import type { Cue, SubtitlePosition, SubtitleStyleConfig } from '../../types'
 const DEFAULT_PLAY_RES_X = 1920
 const DEFAULT_PLAY_RES_Y = 1080
 const FONT_SCALE_BASE_HEIGHT = 1080
+const LAYOUT_SCALE_BASE_WIDTH = 1920
 
 export interface SubtitleRenderTarget {
   width: number
@@ -67,6 +68,10 @@ function scaleToRenderHeight(value: number, renderHeight: number): number {
   return Math.round((value * renderHeight) / FONT_SCALE_BASE_HEIGHT)
 }
 
+function scaleToRenderWidth(value: number, renderWidth: number): number {
+  return Math.round((value * renderWidth) / LAYOUT_SCALE_BASE_WIDTH)
+}
+
 export function renderAssSubtitles(
   cues: Cue[],
   style: SubtitleStyleConfig,
@@ -86,6 +91,7 @@ export function renderAssSubtitles(
     ? outlineWidth + backgroundPadding
     : outlineWidth
   const alignment = getAssAlignment(style.position)
+  const marginX = Math.max(24, scaleToRenderWidth(120, renderTarget.width))
   const marginV = Math.max(24, scaleToRenderHeight(style.safeMargin, renderTarget.height))
   const primaryColor = toAssColor(style.textColor)
   const outlineColor = toAssColor(style.outlineColor)
@@ -105,7 +111,7 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontFamily},${resolvedFontSize},${primaryColor},${primaryColor},${outlineColor},${backColor},${bold},${italic},0,0,100,100,0,0,${borderStyle},${effectiveOutlineWidth},${shadowSize},${alignment},120,120,${marginV},1
+Style: Default,${fontFamily},${resolvedFontSize},${primaryColor},${primaryColor},${outlineColor},${backColor},${bold},${italic},0,0,100,100,0,0,${borderStyle},${effectiveOutlineWidth},${shadowSize},${alignment},${marginX},${marginX},${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`

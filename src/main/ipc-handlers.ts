@@ -6,6 +6,7 @@ import { detectSubtitleForVideo } from './services/subtitle-detect'
 import { listSystemFonts } from './services/font-service'
 import { getChineseVoices, synthesizeToBuffer } from './services/edge-tts'
 import { deleteTaskCues, loadTaskCues } from './task-cue-store'
+import { setRuntimeConfig } from './runtime-config-store'
 import {
   getTaskSnapshots,
   registerTasks,
@@ -58,11 +59,14 @@ export function registerIpcHandlers(): void {
   removeInvokeHandlers()
 
   ipcMain.handle('config:load', async () => {
-    return loadConfig()
+    const config = await loadConfig()
+    setRuntimeConfig(config)
+    return config
   })
 
   ipcMain.handle('config:save', async (_event, config: AppConfig) => {
     await saveConfig(config)
+    setRuntimeConfig(config)
     updateConcurrentPipelineLimit(config)
   })
 

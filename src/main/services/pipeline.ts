@@ -34,6 +34,8 @@ import {
 } from './subtitle-timing'
 import { reserveOutputTarget, type ReservedOutputTarget } from './output-path'
 import { saveAssSubtitleFile } from './subtitle-renderer'
+import { TaskScheduler, type ScheduledTaskEntry } from './task-scheduler'
+import { getRuntimeConfig, setRuntimeConfig } from '../runtime-config-store'
 
 // ─── Task state management ──────────────────────
 
@@ -46,18 +48,6 @@ interface TaskState extends ReviewSessionState {
 
 const activeTasks = new Map<string, TaskState>()
 let currentConcurrentPipelineLimit = 2
-
-interface QueuedTaskEntry {
-  taskId: string
-  videoPath: string
-  subtitlePath: string
-  config: AppConfig
-}
-
-const pendingTasks: QueuedTaskEntry[] = []
-const queuedTaskIds = new Set<string>()
-const pendingResumeTaskIds: string[] = []
-const queuedResumeTaskIds = new Set<string>()
 const BLOCK_SLEEP_STATUSES = new Set<TaskStatus>([
   'parsing',
   'translating',
@@ -138,22 +128,6 @@ function updateSleepBlocker(): void {
   sleepBlockerId = null
 }
 
-function removeQueuedTask(taskId: string): boolean {
-  const index = pendingTasks.findIndex((task) => task.taskId === taskId)
-  if (index < 0) return false
-  pendingTasks.splice(index, 1)
-  queuedTaskIds.delete(taskId)
-  return true
-}
-
-function removeQueuedResumeTask(taskId: string): boolean {
-  const index = pendingResumeTaskIds.findIndex((id) => id === taskId)
-  if (index < 0) return false
-  pendingResumeTaskIds.splice(index, 1)
-  queuedResumeTaskIds.delete(taskId)
-  return true
-}
-
 function getRunnableActiveCount(): number {
   let count = 0
   for (const state of activeTasks.values()) {
@@ -183,38 +157,47 @@ function resumePausedTaskNow(taskId: string): boolean {
   return true
 }
 
-function startNextQueuedTasks(): void {
-  while (getRunnableActiveCount() < currentConcurrentPipelineLimit) {
-    const nextResumeTaskId = pendingResumeTaskIds.shift()
-    if (nextResumeTaskId) {
-      queuedResumeTaskIds.delete(nextResumeTaskId)
-      if (resumePausedTaskNow(nextResumeTaskId)) continue
-    }
+const scheduler = new TaskScheduler({
+  getRunnableActiveCount,
+  resumeTaskNow: resumePausedTaskNow,
+  runTask: (task: ScheduledTaskEntry) => {
+    const config = getRuntimeConfig()
+    void runPipeline(task.taskId, task.videoPath, task.subtitlePath, config)
+  },
+  reportQueued: (taskId, progress) => {
+    reportProgress(taskId, 'queued', progress)
+  },
+})
 
-    const nextTask = pendingTasks.shift()
-    if (!nextTask) return
-    queuedTaskIds.delete(nextTask.taskId)
-    void runPipeline(nextTask.taskId, nextTask.videoPath, nextTask.subtitlePath, nextTask.config)
-  }
+function removeQueuedTask(taskId: string): boolean {
+  return scheduler.removeQueuedTask(taskId)
 }
 
-function enqueueTask(task: QueuedTaskEntry, front = false): void {
-  if (activeTasks.has(task.taskId) || queuedTaskIds.has(task.taskId)) return
+function removeQueuedResumeTask(taskId: string): boolean {
+  return scheduler.removeQueuedResume(taskId)
+}
 
-  if (front) pendingTasks.unshift(task)
-  else pendingTasks.push(task)
+function listQueuedTaskIds(): string[] {
+  return scheduler.listQueuedTaskIds()
+}
 
-  queuedTaskIds.add(task.taskId)
-  reportProgress(task.taskId, 'queued', 0)
-  startNextQueuedTasks()
+function listQueuedResumeTaskIds(): string[] {
+  return scheduler.listQueuedResumeTaskIds()
+}
+
+function startNextQueuedTasks(): void {
+  scheduler.process()
+}
+
+function enqueueTask(task: ScheduledTaskEntry, front = false): void {
+  if (activeTasks.has(task.taskId) || scheduler.hasQueuedTask(task.taskId)) return
+  scheduler.enqueueTask(task, front)
 }
 
 function enqueuePausedTaskForResume(taskId: string): void {
-  if (queuedResumeTaskIds.has(taskId) || !activeTasks.has(taskId)) return
-  pendingResumeTaskIds.push(taskId)
-  queuedResumeTaskIds.add(taskId)
+  if (!activeTasks.has(taskId)) return
   const last = lastWorkStatus.get(taskId)
-  reportProgress(taskId, 'queued', last?.progress ?? 0)
+  scheduler.enqueueResume(taskId, last?.progress ?? 0)
 }
 
 function checkCancelled(taskId: string): void {
@@ -604,7 +587,9 @@ export function pauseTask(taskId: string): void {
 
 export function resumeTask(taskId: string, config?: AppConfig): void {
   if (config) {
+    setRuntimeConfig(config)
     currentConcurrentPipelineLimit = getConcurrentPipelineLimit(config)
+    scheduler.setLimit(currentConcurrentPipelineLimit)
   }
 
   const state = activeTasks.get(taskId)
@@ -631,7 +616,7 @@ export function resumeTask(taskId: string, config?: AppConfig): void {
   }
 
   if (!config) return
-  if (queuedTaskIds.has(taskId)) return
+  if (scheduler.hasQueuedTask(taskId)) return
   const task = getTaskSnapshot(taskId)
   if (!task?.subtitlePath) return
   enqueueTask(
@@ -639,7 +624,6 @@ export function resumeTask(taskId: string, config?: AppConfig): void {
       taskId,
       videoPath: task.videoPath,
       subtitlePath: task.subtitlePath,
-      config,
     },
     true
   )
@@ -679,8 +663,8 @@ export function cancelTask(taskId: string): void {
 }
 
 export function pauseAllActiveTasks(): void {
-  const queuedTaskIdsToPause = Array.from(queuedTaskIds)
-  const queuedResumeTaskIdsToPause = Array.from(queuedResumeTaskIds)
+  const queuedTaskIdsToPause = listQueuedTaskIds()
+  const queuedResumeTaskIdsToPause = listQueuedResumeTaskIds()
   const taskIdsToPause: string[] = []
 
   for (const taskId of queuedTaskIdsToPause) {
@@ -703,7 +687,9 @@ export function pauseAllActiveTasks(): void {
 
 export function resumeAllTasks(taskIds: string[], config?: AppConfig): void {
   if (!Array.isArray(taskIds) || taskIds.length === 0 || !config) return
+  setRuntimeConfig(config)
   currentConcurrentPipelineLimit = getConcurrentPipelineLimit(config)
+  scheduler.setLimit(currentConcurrentPipelineLimit)
 
   for (const taskId of taskIds) {
     if (typeof taskId !== 'string' || !taskId.trim()) continue
@@ -712,7 +698,9 @@ export function resumeAllTasks(taskIds: string[], config?: AppConfig): void {
 }
 
 export function updateConcurrentPipelineLimit(config?: AppConfig): void {
+  if (config) setRuntimeConfig(config)
   currentConcurrentPipelineLimit = getConcurrentPipelineLimit(config)
+  scheduler.setLimit(currentConcurrentPipelineLimit)
   startNextQueuedTasks()
 }
 
@@ -983,12 +971,14 @@ export function startTasks(
   config: AppConfig
 ): void {
   const configError = validateTaskConfig(config)
+  setRuntimeConfig(config)
   currentConcurrentPipelineLimit = getConcurrentPipelineLimit(config)
+  scheduler.setLimit(currentConcurrentPipelineLimit)
 
   for (let i = 0; i < taskIds.length; i++) {
     const taskId = taskIds[i]
     const task = tasks[i]
-    if (activeTasks.has(taskId) || queuedTaskIds.has(taskId)) continue
+    if (activeTasks.has(taskId) || scheduler.hasQueuedTask(taskId)) continue
     if (configError) {
       reportProgress(taskId, 'error', 0)
       reportTaskError(taskId, configError)
@@ -1003,7 +993,6 @@ export function startTasks(
       taskId,
       videoPath: task.videoPath,
       subtitlePath: task.subtitlePath,
-      config,
     })
   }
 }

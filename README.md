@@ -26,15 +26,17 @@ This makes it suitable for tutorial videos, technical walkthroughs, and other na
 ## Features
 
 - Batch import multiple videos from the same folder.
-- Auto-detect matching subtitle files such as `video.srt`, `video.en.srt`, `video_en.srt`, and `video-en.srt`.
+- Auto-detect matching subtitle files by combining naming heuristics with subtitle-content language checks, so the app prefers the original English track instead of only trusting file suffixes.
 - Parse `SRT`, `VTT`, and `ASS/SSA` subtitles.
 - Translate subtitles with DeepSeek using segment-level translation.
 - Keep terminology stable with a glossary and review the generated Chinese subtitles before dubbing.
 - Generate Chinese dubbing with Edge TTS and preview voices in the app.
-- Measure synthesized duration and apply timing-safe fallback strategies when a segment is too long.
-- Pause, resume, cancel, and recover tasks after restart or sleep.
+- Measure synthesized duration, apply timing-safe fallback strategies when a segment is too long, and retime cues against actual synthesized speech boundaries.
+- Pause, resume, cancel, retry failed tasks, and recover tasks after restart or sleep.
 - Export dubbed videos with either external subtitle files or burned-in Chinese subtitles.
-- Configure burned subtitle styles with system fonts, size, colors, outline, background fill, and top/bottom safe-area placement.
+- Configure burned subtitle styles with searchable system fonts, size, bold, italic, colors, outline, background fill, background padding, and top/bottom safe-area placement.
+- Choose whether output files are written into per-video subfolders or directly into the selected output directory.
+- Limit concurrent task execution with configurable local scheduling.
 
 ## Workflow
 
@@ -46,7 +48,8 @@ ChronoDub uses subtitle windows as anchors, then fine-tunes cue timing after syn
 4. Translate each segment into natural, accurate Chinese.
 5. Review or edit subtitles before starting dubbing.
 6. Synthesize audio, measure actual duration, and retry with safe fallbacks when needed.
-7. Assemble the final Chinese audio track and mux it back into the source video.
+7. Retime subtitle cues against the accepted synthesized speech boundaries.
+8. Assemble the final Chinese audio track and write either an external subtitle file or a burned-in subtitle video.
 
 ## Architecture
 
@@ -54,19 +57,25 @@ ChronoDub uses subtitle windows as anchors, then fine-tunes cue timing after syn
 flowchart LR
   UI[Renderer UI]
   IPC[Preload IPC Bridge]
-  PIPE[Pipeline Orchestrator]
+  SCHED[Task Scheduler]
+  PIPE[Pipeline Runner]
   SUB[Subtitle Parser]
+  DETECT[Subtitle Detection]
   DS[DeepSeek Translation]
   TTS[Edge TTS]
   AUD[Audio Processor]
+  RENDER[Subtitle Renderer]
   FFMPEG[FFmpeg Muxing]
 
   UI --> IPC
-  IPC --> PIPE
+  IPC --> SCHED
+  SCHED --> PIPE
+  PIPE --> DETECT
   PIPE --> SUB
   PIPE --> DS
   PIPE --> TTS
   PIPE --> AUD
+  PIPE --> RENDER
   PIPE --> FFMPEG
 ```
 
@@ -74,7 +83,7 @@ The app is split into three main parts:
 
 - `renderer`: React UI for task management, subtitle review, and configuration.
 - `preload`: IPC bridge that exposes safe APIs to the renderer.
-- `main`: Electron services for subtitles, translation, TTS, audio timing, task persistence, and FFmpeg orchestration.
+- `main`: Electron services for task scheduling, subtitle detection and parsing, translation, TTS, audio timing, task persistence, subtitle rendering, and FFmpeg orchestration.
 
 ## Tech Stack
 
@@ -157,6 +166,9 @@ npm run preview
 # Run lint checks
 npm run lint
 
+# Run unit tests
+npm test
+
 # Auto-fix lint issues
 npm run lint:fix
 
@@ -197,6 +209,28 @@ When "Create a subfolder for each video" is disabled, files are written directly
   MyVideo.srt   # only generated in external subtitle mode
 ```
 
+If multiple source videos share the same basename, ChronoDub will automatically avoid flat-output collisions by reserving unique output file names.
+
+## Configuration Notes
+
+- `Review Mode`
+  - `Auto`: start an editable review session with a countdown.
+  - `Manual`: wait until you explicitly confirm the Chinese subtitle review.
+- `Subtitle Output Mode`
+  - `External`: export the dubbed video and a `.srt` file.
+  - `Burned`: export a single video with hardcoded Chinese subtitles.
+- `Burned Subtitle Style`
+  - System font picker with search
+  - Font size, bold, italic
+  - Text color
+  - Outline enable, width, color
+  - Background enable, color, opacity, padding
+  - Top-safe or bottom-safe placement
+  - Safe-area margin
+- `Max Concurrent Tasks`
+  - Controls how many local tasks run at once.
+  - Queued tasks use the latest saved runtime configuration when they actually start.
+
 ## Project Structure
 
 ```text
@@ -205,10 +239,13 @@ src/
 ├─ hooks/        UI hooks
 ├─ lib/          Frontend utilities
 ├─ main/         Electron main process and backend services
+│  ├─ services/  Pipeline, scheduler, subtitle, audio, ffmpeg, and detection services
+│  └─ ...        Task registry, config store, runtime state
 ├─ preload/      IPC bridge
 ├─ renderer/     Renderer entry and static assets
 ├─ stores/       Zustand state management
 └─ types/        Shared type definitions
+tests/           Node-based unit tests
 docs/
 ├─ chronodub.md  Research and architecture notes
 └─ image.png     Application screenshot
@@ -224,6 +261,7 @@ scripts/
 - If TTS fails, check network access and test the configured Edge voice in the app first.
 - If muxing fails, confirm `ffmpeg` and `ffprobe` are installed and discoverable.
 - If a task was interrupted by system sleep, reopen the app and resume it from the task list.
+- If burned subtitle styling looks wrong on one specific video, verify the video metadata first; ChronoDub now scales subtitle layout to the detected display size, including rotated videos.
 
 ## Contributing
 

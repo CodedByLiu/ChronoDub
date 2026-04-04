@@ -69,7 +69,7 @@ test('renderAssSubtitles adapts play resolution and typography to the current vi
   assert.match(ass, /PlayResX: 1280/)
   assert.match(ass, /PlayResY: 720/)
   assert.match(ass, /Style: Default,Arial,32,/)
-  assert.match(ass, /,2,120,120,48,1/)
+  assert.match(ass, /,2,80,80,48,1/)
 })
 
 test('renderAssSubtitles expands the background box when background padding is set', () => {
