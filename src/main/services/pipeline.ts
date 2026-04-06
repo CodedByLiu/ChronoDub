@@ -3,7 +3,13 @@ import { join } from 'path'
 import { BrowserWindow, powerSaveBlocker } from 'electron'
 import type { Cue, AppConfig, TaskStatus } from '../../types'
 import { parseSubtitleFile, saveSubtitleFile } from './subtitle-parser'
-import { translateSegments, applyTerminologyToChinese } from './deepseek'
+import {
+  translateSegments,
+  applyTerminologyToChinese,
+  TranslationIncompleteError,
+  TRANSLATION_STRATEGY_VERSION,
+  type TranslationIssueItem,
+} from './deepseek'
 import { burnSubtitlesIntoVideo, ffprobe, muxVideoWithAudio } from './ffmpeg'
 import {
   buildSegments,
@@ -18,12 +24,18 @@ import {
   type SegmentRisk,
 } from './audio-processor'
 import { tmpdir } from 'os'
-import { deleteTaskCues, saveTaskCues } from '../task-cue-store'
+import {
+  deleteTaskCues,
+  loadTaskTranslationCache,
+  saveTaskCues,
+  saveTaskTranslationCache,
+} from '../task-cue-store'
 import {
   getTaskSnapshot,
   updateTaskCountdownSnapshot,
   updateTaskErrorSnapshot,
   updateTaskStatusSnapshot,
+  updateTaskTranslationIssuesSnapshot,
 } from '../task-registry'
 import { clearReviewCountdown, runReviewSession, type ReviewSessionState } from './review-session'
 import {
@@ -65,6 +77,99 @@ const LAST_WORK_STATUSES = new Set<TaskStatus>([
 ])
 const SYNTHESIS_SEGMENT_TIMEOUT_MS = 180_000
 let sleepBlockerId: number | null = null
+interface TaskTranslationCacheEntry {
+  configSignature: string
+  translations: Map<number, string>
+}
+
+const taskSegmentTranslationCache = new Map<string, TaskTranslationCacheEntry>()
+const taskTranslationIssues = new Map<string, TranslationIssueItem[]>()
+
+function cloneTranslationIssues(issues: TranslationIssueItem[]): TranslationIssueItem[] {
+  return issues.map((item) => ({ id: item.id, text: item.text }))
+}
+
+function reportTaskTranslationIssues(taskId: string, issues: TranslationIssueItem[]): void {
+  sendToRenderer('task:translation-issues', taskId, cloneTranslationIssues(issues))
+}
+
+function setTaskTranslationIssues(taskId: string, issues: TranslationIssueItem[]): void {
+  if (issues.length === 0) {
+    taskTranslationIssues.delete(taskId)
+    updateTaskTranslationIssuesSnapshot(taskId, [])
+    reportTaskTranslationIssues(taskId, [])
+    return
+  }
+
+  const normalized = cloneTranslationIssues(issues)
+  taskTranslationIssues.set(taskId, normalized)
+  updateTaskTranslationIssuesSnapshot(taskId, normalized)
+  reportTaskTranslationIssues(taskId, normalized)
+}
+
+function clearTaskTranslationIssues(taskId: string): void {
+  setTaskTranslationIssues(taskId, [])
+}
+
+function buildTranslationConfigSignature(config: AppConfig): string {
+  const dictionary = config.dictionary
+    .map((item) => ({
+      en: item.en.trim(),
+      zh: item.zh.trim(),
+    }))
+    .filter((item) => item.en.length > 0)
+
+  return JSON.stringify({
+    strategyVersion: TRANSLATION_STRATEGY_VERSION,
+    dictionary,
+  })
+}
+
+function getTaskSegmentTranslations(taskId: string, configSignature: string): Map<number, string> {
+  const cached = taskSegmentTranslationCache.get(taskId)
+  if (!cached) return new Map()
+  if (cached.configSignature !== configSignature) {
+    taskSegmentTranslationCache.delete(taskId)
+    return new Map()
+  }
+
+  return new Map(cached.translations)
+}
+
+function setTaskSegmentTranslations(
+  taskId: string,
+  configSignature: string,
+  translations: Map<number, string>
+): void {
+  const cacheEntry: TaskTranslationCacheEntry = {
+    configSignature,
+    translations: new Map(translations),
+  }
+  taskSegmentTranslationCache.set(taskId, cacheEntry)
+  void saveTaskTranslationCache(taskId, {
+    configSignature: cacheEntry.configSignature,
+    segmentTranslations: cacheEntry.translations,
+  })
+}
+
+function clearTaskTranslationRuntime(taskId: string, persistCache = true): void {
+  taskSegmentTranslationCache.delete(taskId)
+  if (persistCache) {
+    void saveTaskTranslationCache(taskId, null)
+  }
+  clearTaskTranslationIssues(taskId)
+}
+
+async function hydrateTaskTranslationCache(taskId: string): Promise<void> {
+  if (taskSegmentTranslationCache.has(taskId)) return
+  const persisted = await loadTaskTranslationCache(taskId)
+  if (!persisted) return
+
+  taskSegmentTranslationCache.set(taskId, {
+    configSignature: persisted.configSignature,
+    translations: new Map(persisted.segmentTranslations),
+  })
+}
 
 function getConcurrentPipelineLimit(config?: AppConfig): number {
   const value = config?.maxConcurrentTasks
@@ -104,6 +209,7 @@ function cleanupTask(taskId: string): void {
   if (state) clearReviewCountdown(state)
   if (state?.cancelled) {
     void deleteTaskCues(taskId)
+    clearTaskTranslationRuntime(taskId, false)
   }
   activeTasks.delete(taskId)
   removeQueuedResumeTask(taskId)
@@ -527,6 +633,15 @@ export async function confirmReview(taskId: string, cues: Cue[]): Promise<void> 
   }
 }
 
+export function clearTaskTranslationState(taskId: string, persistCache = true): void {
+  clearTaskTranslationRuntime(taskId, persistCache)
+}
+
+export function retryFailedTranslations(taskId: string, config?: AppConfig): void {
+  if (!taskId.trim()) return
+  resumeTask(taskId, config ?? getRuntimeConfig())
+}
+
 function getPauseDetail(currentStatus: TaskStatus): string | undefined {
   if (currentStatus === 'synthesizing') return '暂停中，等待当前片段合成结束'
   if (
@@ -638,6 +753,7 @@ export function cancelAllTasks(taskIds: string[]): void {
 export function cancelTask(taskId: string): void {
   if (removeQueuedTask(taskId)) {
     void deleteTaskCues(taskId)
+    clearTaskTranslationRuntime(taskId, false)
     return
   }
   removeQueuedResumeTask(taskId)
@@ -645,6 +761,7 @@ export function cancelTask(taskId: string): void {
   const state = activeTasks.get(taskId)
   if (!state) {
     void deleteTaskCues(taskId)
+    clearTaskTranslationRuntime(taskId, false)
     return
   }
 
@@ -719,6 +836,7 @@ export async function runPipeline(
   try {
     const configError = validateTaskConfig(config)
     if (configError) throw new Error(configError)
+    await hydrateTaskTranslationCache(taskId)
 
     // Step 1: Parse subtitles
     reportProgress(taskId, 'parsing', 5)
@@ -767,16 +885,46 @@ export async function runPipeline(
       segmentBudgetMap.set(w.segmentId, computeSegmentTranslationBudget(w.budgetChars, risk))
     }
 
-    const translations = await translateSegments(
-      segments.map((segment) => ({ id: segment.id, text: segment.textEn })),
-      config.deepseekKey,
-      config.dictionary,
-      segmentBudgetMap,
-      async () => {
-        await checkPaused(taskId)
-        checkCancelled(taskId)
+    const translationConfigSignature = buildTranslationConfigSignature(config)
+    const translations = getTaskSegmentTranslations(taskId, translationConfigSignature)
+    const pendingSegments = segments.filter((segment) => !translations.has(segment.id))
+
+    if (pendingSegments.length > 0) {
+      const pendingBudgetMap = new Map<number, number>()
+      for (const segment of pendingSegments) {
+        const budget = segmentBudgetMap.get(segment.id)
+        if (budget !== undefined) pendingBudgetMap.set(segment.id, budget)
       }
-    )
+
+      try {
+        const translatedPending = await translateSegments(
+          pendingSegments.map((segment) => ({ id: segment.id, text: segment.textEn })),
+          config.deepseekKey,
+          config.dictionary,
+          pendingBudgetMap.size > 0 ? pendingBudgetMap : undefined,
+          async () => {
+            await checkPaused(taskId)
+            checkCancelled(taskId)
+          }
+        )
+
+        for (const [id, text] of translatedPending) {
+          translations.set(id, text)
+        }
+        setTaskSegmentTranslations(taskId, translationConfigSignature, translations)
+      } catch (err) {
+        if (err instanceof TranslationIncompleteError) {
+          for (const [id, text] of err.partialTranslations) {
+            translations.set(id, text)
+          }
+          setTaskSegmentTranslations(taskId, translationConfigSignature, translations)
+          setTaskTranslationIssues(taskId, err.unresolvedItems)
+        }
+        throw err
+      }
+    }
+
+    clearTaskTranslationIssues(taskId)
     checkCancelled(taskId)
     await checkPaused(taskId)
     checkCancelled(taskId)
@@ -785,7 +933,7 @@ export async function runPipeline(
     const translatedCueTextMap = new Map<number, string>()
 
     for (const segment of segments) {
-      const raw = translations.get(segment.id) || segment.textEn
+      const raw = translations.get(segment.id) ?? segment.textEn
       const segmentText = applyTerminologyToChinese(segment.textEn, raw, config.dictionary)
       const segmentCues = segment.cueIds
         .map((cueId) => englishCueMap.get(cueId))
@@ -797,10 +945,22 @@ export async function runPipeline(
       })
     }
 
-    const chineseCues: Cue[] = englishCues.map((cue) => ({
-      ...cue,
-      text: translatedCueTextMap.get(cue.id) || cue.text,
-    }))
+    const missingCueIds = englishCues
+      .filter((cue) => !translatedCueTextMap.has(cue.id))
+      .map((cue) => cue.id)
+    if (missingCueIds.length > 0) {
+      throw new Error(
+        `字幕翻译映射缺失，仍有 ${missingCueIds.length} 条未写回（id: ${missingCueIds.join(', ')}）`
+      )
+    }
+
+    const chineseCues: Cue[] = englishCues.map((cue) => {
+      const text = translatedCueTextMap.get(cue.id)
+      return {
+        ...cue,
+        text: text ?? '',
+      }
+    })
 
     reportProgress(taskId, 'translating', 45)
 
@@ -937,6 +1097,7 @@ export async function runPipeline(
     }
     await saveTaskCues(taskId, { englishCues, chineseCues: finalizedCues })
     sendToRenderer('task:cues-updated', taskId, englishCues, finalizedCues)
+    clearTaskTranslationRuntime(taskId)
 
     // Done
     reportProgress(taskId, 'completed', 100, '处理完成')

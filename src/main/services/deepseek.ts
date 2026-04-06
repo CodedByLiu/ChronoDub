@@ -1,11 +1,13 @@
-import type { Cue } from '../../types'
+﻿import type { Cue } from '../../types'
 
 const API_URL = 'https://api.deepseek.com/chat/completions'
 const BATCH_SIZE = 15
 const MAX_RETRIES = 3
+const SINGLE_ITEM_RETRIES = 2
 const DEEPSEEK_TEST_TIMEOUT_MS = 15_000
 const DEEPSEEK_TRANSLATE_TIMEOUT_MS = 45_000
 const DEEPSEEK_COMPRESS_TIMEOUT_MS = 45_000
+export const TRANSLATION_STRATEGY_VERSION = '2026-04-06-v2'
 
 interface TranslationResult {
   translations: Array<{ id: number; text: string }>
@@ -15,6 +17,29 @@ interface TranslationInputItem {
   id: number
   text: string
   max_chars?: number
+}
+
+export interface TranslationIssueItem {
+  id: number
+  text: string
+  max_chars?: number
+}
+
+export class TranslationIncompleteError extends Error {
+  unresolvedItems: TranslationIssueItem[]
+  partialTranslations: Map<number, string>
+
+  constructor(
+    message: string,
+    partialTranslations: Map<number, string>,
+    unresolvedItems: TranslationIssueItem[]
+  ) {
+    super(message)
+    this.name = 'TranslationIncompleteError'
+    this.partialTranslations = new Map(partialTranslations)
+    this.unresolvedItems = unresolvedItems.map((item) => ({ ...item }))
+    Object.setPrototypeOf(this, new.target.prototype)
+  }
 }
 
 async function fetchWithTimeout(
@@ -44,6 +69,55 @@ function escapeRegexTerm(s: string): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function normalizeSpaces(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+function hasCjk(text: string): boolean {
+  return /[\u3400-\u9fff]/u.test(text)
+}
+
+function looksLikeSentence(text: string): boolean {
+  return /\s/.test(text) || /[,.!?;:\u3002\uFF0C\uFF1F\uFF01\uFF1B\uFF1A]/.test(text) || text.length >= 20
+}
+
+const EN_WORD_RE = /[A-Za-z]+(?:'[A-Za-z]+)?/g
+const EN_COPULA_SENTENCE_RE =
+  /^(?:so\s+)?(?:this|that|it|there)\s+(?:is|was|are|were|means|refers\s+to)\b/i
+const EN_THIS_IS_ARTICLE_RE = /^this\s+is\s+(?:the|a|an)\b/i
+
+function countEnglishWords(text: string): number {
+  return text.match(EN_WORD_RE)?.length ?? 0
+}
+
+function countVisibleChars(text: string): number {
+  return text.replace(/\s+/g, '').length
+}
+
+function shouldRetryAsOverCompressed(source: string, translated: string): boolean {
+  const src = normalizeSpaces(source)
+  const dst = normalizeSpaces(translated)
+  if (!src || !dst || !looksLikeSentence(src) || !hasCjk(dst)) return false
+
+  const dstChars = countVisibleChars(dst)
+  const srcWords = countEnglishWords(src)
+
+  // High-confidence guard only: copula-style full sentence collapsed into a bare noun phrase.
+  if (srcWords >= 4 && EN_COPULA_SENTENCE_RE.test(src) && dstChars <= 4) return true
+  if (srcWords >= 4 && EN_THIS_IS_ARTICLE_RE.test(src) && dstChars <= 6) return true
+
+  return false
+}
+function shouldRetryAsUntranslated(source: string, translated: string): boolean {
+  const src = normalizeSpaces(source)
+  const dst = normalizeSpaces(translated)
+  if (!dst) return true
+
+  if (src !== dst) return false
+  if (hasCjk(src)) return false
+  return looksLikeSentence(src)
 }
 
 function buildChatRequest(
@@ -91,7 +165,7 @@ export async function testDeepseekConnection(
   apiKey: string
 ): Promise<{ ok: boolean; message?: string }> {
   const key = apiKey.trim()
-  if (!key) return { ok: false, message: '未填写 API Key' }
+  if (!key) return { ok: false, message: '鏈～鍐?API Key' }
 
   try {
     const response = await fetchWithTimeout(
@@ -109,13 +183,13 @@ export async function testDeepseekConnection(
         }),
       },
       DEEPSEEK_TEST_TIMEOUT_MS,
-      `DeepSeek 连接超时（>${Math.round(DEEPSEEK_TEST_TIMEOUT_MS / 1000)} 秒）`
+      `DeepSeek 杩炴帴瓒呮椂锛?${Math.round(DEEPSEEK_TEST_TIMEOUT_MS / 1000)} 绉掞級`
     )
 
     if (response.ok) return { ok: true }
 
     const body = await response.text()
-    let message = `请求失败 (${response.status})`
+    let message = `璇锋眰澶辫触 (${response.status})`
     try {
       const parsed = JSON.parse(body) as { error?: { message?: string } }
       if (parsed.error?.message) message = parsed.error.message
@@ -124,7 +198,7 @@ export async function testDeepseekConnection(
     }
     return { ok: false, message }
   } catch (err: unknown) {
-    return { ok: false, message: err instanceof Error ? err.message : '网络错误' }
+    return { ok: false, message: err instanceof Error ? err.message : '缃戠粶閿欒' }
   }
 }
 
@@ -149,13 +223,12 @@ export async function translateCues(
   cues: Cue[],
   apiKey: string,
   dictionary: Array<{ en: string; zh: string }>,
-  maxCharsPerCue?: Map<number, number>,
+  _maxCharsPerCue?: Map<number, number>,
   betweenBatches?: () => void | Promise<void>
 ): Promise<Map<number, string>> {
   const items = cues.map((cue) => ({
     id: cue.id,
     text: cue.text,
-    ...(maxCharsPerCue?.has(cue.id) ? { max_chars: maxCharsPerCue.get(cue.id) } : {}),
   }))
 
   return translateItems(items, apiKey, dictionary, betweenBatches)
@@ -165,15 +238,12 @@ export async function translateSegments(
   segments: Array<{ id: number; text: string }>,
   apiKey: string,
   dictionary: Array<{ en: string; zh: string }>,
-  maxCharsPerSegment?: Map<number, number>,
+  _maxCharsPerSegment?: Map<number, number>,
   betweenBatches?: () => void | Promise<void>
 ): Promise<Map<number, string>> {
   const items = segments.map((segment) => ({
     id: segment.id,
     text: segment.text,
-    ...(maxCharsPerSegment?.has(segment.id)
-      ? { max_chars: maxCharsPerSegment.get(segment.id) }
-      : {}),
   }))
 
   return translateItems(items, apiKey, dictionary, betweenBatches)
@@ -190,7 +260,18 @@ async function translateItems(
   for (let i = 0; i < items.length; i += BATCH_SIZE) {
     await betweenBatches?.()
     const batch = items.slice(i, i + BATCH_SIZE)
-    const batchResult = await translateBatch(batch, apiKey, dictionary)
+    let batchResult: Map<number, string>
+    try {
+      batchResult = await translateBatch(batch, apiKey, dictionary)
+    } catch (err) {
+      if (err instanceof TranslationIncompleteError) {
+        for (const [id, text] of err.partialTranslations) {
+          result.set(id, text)
+        }
+        throw new TranslationIncompleteError(err.message, result, err.unresolvedItems)
+      }
+      throw err
+    }
     for (const [id, text] of batchResult) {
       result.set(id, text)
     }
@@ -204,6 +285,46 @@ async function translateBatch(
   apiKey: string,
   dictionary: Array<{ en: string; zh: string }>
 ): Promise<Map<number, string>> {
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const parsed = await requestBatchTranslations(items, apiKey, dictionary, true)
+      const { resolved, unresolved } = validateBatchTranslations(items, parsed)
+
+      if (unresolved.length === 0) return resolved
+
+      if (attempt < MAX_RETRIES - 1) {
+        await sleep(1000 * (attempt + 1))
+        continue
+      }
+
+      const recovered = await recoverMissingTranslations(unresolved, apiKey, dictionary)
+      for (const [id, text] of recovered) {
+        resolved.set(id, text)
+      }
+
+      const unresolvedAfterRecover = unresolved.filter((item) => !resolved.has(item.id))
+      if (unresolvedAfterRecover.length === 0) return resolved
+
+      throw new TranslationIncompleteError(
+        `DeepSeek translation result is incomplete. ${unresolvedAfterRecover.length} item(s) still unresolved (id: ${unresolvedAfterRecover
+          .map((item) => item.id)
+          .join(', ')}).`,
+        resolved,
+        unresolvedAfterRecover
+      )
+    } catch (err) {
+      if (attempt === MAX_RETRIES - 1) throw err
+      await sleep(1000 * (attempt + 1))
+    }
+  }
+
+  throw new Error('translateBatch: exceeded max retries')
+}
+
+function buildTranslateSystemPrompt(
+  dictionary: Array<{ en: string; zh: string }>,
+  strictMode: boolean
+): string {
   const dictLines =
     dictionary.length > 0
       ? dictionary
@@ -213,69 +334,137 @@ async function translateBatch(
       : ''
 
   const systemPrompt = [
-    '你是专业的英文字幕翻译员。',
-    '请把每条英文字幕翻译成自然、准确、简洁的中文讲解句。',
-    dictLines ? `术语表:\n${dictLines}` : '',
-    '要求:',
-    '1. 保持原意、逻辑关系、术语和操作步骤，不要随意发挥。',
-    '2. 如果原文出现术语表中的英文术语，译文必须使用术语表指定写法。',
-    '3. 输出必须是 JSON，格式为 {"translations":[{"id":1,"text":"..."}]}。',
+    'You are a professional subtitle translator from English to Simplified Chinese.',
+    'Translate each line into natural and accurate spoken-style Chinese.',
+    'Do not over-compress: for full English sentences, return full Chinese sentences.',
+    'Keep discourse connectors and logic words when present (for example: so, then, but, therefore).',
+    'Avoid reducing a complete sentence into a bare noun phrase.',
+    dictLines ? `Terminology glossary:\n${dictLines}` : '',
+    'Requirements:',
+    '1. Preserve meaning, logical relation, technical terms, and procedural steps.',
+    '2. If source text contains glossary terms, use the glossary translation in output.',
+    '3. Output must be valid JSON with shape {"translations":[{"id":1,"text":"..."}]}.',
+    strictMode
+      ? '4. Must return exactly one translation for every input id. No missing ids. No extra ids.'
+      : '',
+    strictMode
+      ? '5. Full English sentences must be translated into Chinese; do not return original English.'
+      : '',
   ]
     .filter(Boolean)
     .join('\n')
 
+  return systemPrompt
+}
+
+async function requestBatchTranslations(
+  items: TranslationInputItem[],
+  apiKey: string,
+  dictionary: Array<{ en: string; zh: string }>,
+  strictMode: boolean
+): Promise<Map<number, string>> {
+  const systemPrompt = buildTranslateSystemPrompt(dictionary, strictMode)
   const userPrompt = JSON.stringify(items)
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    try {
-      const response = await fetchWithTimeout(
-        API_URL,
-        buildChatRequest(
-          apiKey,
-          [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          4096,
-          0.3
-        ),
-        DEEPSEEK_TRANSLATE_TIMEOUT_MS,
-        `DeepSeek 翻译超时（>${Math.round(DEEPSEEK_TRANSLATE_TIMEOUT_MS / 1000)} 秒）`
-      )
+  const response = await fetchWithTimeout(
+    API_URL,
+    buildChatRequest(
+      apiKey,
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      4096,
+      0.3
+    ),
+    DEEPSEEK_TRANSLATE_TIMEOUT_MS,
+    `DeepSeek 缈昏瘧瓒呮椂锛?${Math.round(DEEPSEEK_TRANSLATE_TIMEOUT_MS / 1000)} 绉掞級`
+  )
 
-      if (!response.ok) {
-        const errBody = await response.text()
-        throw new Error(`DeepSeek API ${response.status}: ${errBody}`)
-      }
+  if (!response.ok) {
+    const errBody = await response.text()
+    throw new Error(`DeepSeek API ${response.status}: ${errBody}`)
+  }
 
-      const data = await response.json()
-      const content = data.choices?.[0]?.message?.content
-      if (!content) {
-        if (attempt < MAX_RETRIES - 1) continue
-        throw new Error('DeepSeek 返回空内容')
-      }
+  const data = await response.json()
+  const content = data.choices?.[0]?.message?.content
+  if (!content) {
+    throw new Error('DeepSeek returned empty content')
+  }
 
-      const parsed: TranslationResult = JSON.parse(content)
-      const result = new Map<number, string>()
+  const parsed: TranslationResult = JSON.parse(content)
+  const expectedIds = new Set(items.map((item) => item.id))
+  const result = new Map<number, string>()
 
-      for (const item of parsed.translations ?? []) {
-        result.set(item.id, item.text)
-      }
+  for (const item of parsed.translations ?? []) {
+    if (!expectedIds.has(item.id) || typeof item.text !== 'string') continue
+    result.set(item.id, item.text)
+  }
 
-      for (const item of items) {
-        if (!result.has(item.id)) {
-          result.set(item.id, item.text)
+  return result
+}
+
+function validateBatchTranslations(
+  items: TranslationInputItem[],
+  raw: Map<number, string>
+): { resolved: Map<number, string>; unresolved: TranslationInputItem[] } {
+  const resolved = new Map<number, string>()
+  const unresolved: TranslationInputItem[] = []
+
+  for (const item of items) {
+    const output = raw.get(item.id)
+    if (typeof output !== 'string') {
+      unresolved.push(item)
+      continue
+    }
+
+    const normalized = normalizeSpaces(output)
+    if (
+      !normalized ||
+      shouldRetryAsUntranslated(item.text, normalized) ||
+      shouldRetryAsOverCompressed(item.text, normalized)
+    ) {
+      unresolved.push(item)
+      continue
+    }
+
+    resolved.set(item.id, normalized)
+  }
+
+  return { resolved, unresolved }
+}
+
+async function recoverMissingTranslations(
+  missingItems: TranslationInputItem[],
+  apiKey: string,
+  dictionary: Array<{ en: string; zh: string }>
+): Promise<Map<number, string>> {
+  const recovered = new Map<number, string>()
+
+  for (const item of missingItems) {
+    for (let attempt = 0; attempt < SINGLE_ITEM_RETRIES; attempt++) {
+      try {
+        const raw = await requestBatchTranslations([item], apiKey, dictionary, true)
+        const { resolved } = validateBatchTranslations([item], raw)
+        const translated = resolved.get(item.id)
+        if (!translated) {
+          if (attempt < SINGLE_ITEM_RETRIES - 1) {
+            await sleep(500 * (attempt + 1))
+            continue
+          }
+          break
         }
-      }
 
-      return result
-    } catch (err) {
-      if (attempt === MAX_RETRIES - 1) throw err
-      await sleep(1000 * (attempt + 1))
+        recovered.set(item.id, translated)
+        break
+      } catch {
+        if (attempt === SINGLE_ITEM_RETRIES - 1) break
+        await sleep(500 * (attempt + 1))
+      }
     }
   }
 
-  throw new Error('translateBatch: 超过最大重试次数')
+  return recovered
 }
 
 export async function compressTranslation(
@@ -284,10 +473,10 @@ export async function compressTranslation(
   apiKey: string
 ): Promise<string> {
   const systemPrompt = [
-    `将下面的中文压缩到不超过 ${targetChars} 个字。`,
-    '保持专业含义、术语、逻辑和操作步骤不变。',
-    '表达可以更紧凑，但仍要是自然完整的中文句子。',
-    '只输出 JSON，格式为 {"text":"压缩后的内容"}。',
+    `Compress the Chinese sentence below to no more than ${targetChars} characters.`,
+    'Preserve technical meaning, terminology, logic, and procedural intent.',
+    'Keep it natural and complete, not keyword fragments.',
+    'Output JSON only, with shape {"text":"..."}',
   ].join('\n')
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -304,7 +493,7 @@ export async function compressTranslation(
           0.2
         ),
         DEEPSEEK_COMPRESS_TIMEOUT_MS,
-        `DeepSeek 压缩超时（>${Math.round(DEEPSEEK_COMPRESS_TIMEOUT_MS / 1000)} 秒）`
+        `DeepSeek 鍘嬬缉瓒呮椂锛?${Math.round(DEEPSEEK_COMPRESS_TIMEOUT_MS / 1000)} 绉掞級`
       )
 
       if (!response.ok) throw new Error(`DeepSeek API ${response.status}`)
@@ -323,3 +512,4 @@ export async function compressTranslation(
 
   return text
 }
+

@@ -74,6 +74,7 @@ export interface VideoTask {
   countdownRemaining?: number
   error?: string
   errorDetail?: string
+  translationIssues?: TranslationIssue[]
   englishCues?: Cue[]
   chineseCues?: Cue[]
 }
@@ -146,6 +147,11 @@ export interface DeepseekTestResult {
   message?: string
 }
 
+export interface TranslationIssue {
+  id: number
+  text: string
+}
+
 export interface IpcApi {
   openSubtitlePicker: (defaultDir?: string | null) => Promise<string | null>
   filePathFromDragFile: (file: File) => string
@@ -183,6 +189,7 @@ export interface IpcApi {
     resumeAll: (taskIds: string[], config: AppConfig) => void
     pause: (taskId: string) => void
     resume: (taskId: string, config: AppConfig) => void
+    retryFailedTranslations: (taskId: string, config: AppConfig) => void
     cancel: (taskId: string) => void
     cancelAll: (taskIds: string[]) => void
     saveReview: (taskId: string, cues: Cue[]) => void
@@ -196,6 +203,9 @@ export interface IpcApi {
     ) => () => void
     onCuesUpdated: (
       callback: (taskId: string, englishCues?: Cue[], chineseCues?: Cue[]) => void
+    ) => () => void
+    onTranslationIssues: (
+      callback: (taskId: string, issues: TranslationIssue[]) => void
     ) => () => void
     onError: (callback: (taskId: string, message: string, detail?: string) => void) => () => void
   }

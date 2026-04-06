@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { Eye, FileVideo, Pause, Pencil, Play, Trash2 } from 'lucide-react'
-import type { AppConfig, ReviewMode, TaskStatus, VideoTask } from '../types'
+import { Eye, FileWarning, FileVideo, Pause, Pencil, Play, RefreshCcw, Trash2 } from 'lucide-react'
+import type { AppConfig, ReviewMode, TaskStatus, TranslationIssue, VideoTask } from '../types'
 import { TASK_STATUS_META } from '../types'
 import { useAppStore } from '../stores/app-store'
 import { Badge } from './ui/badge'
@@ -60,6 +60,7 @@ interface VideoTaskRowProps {
   task: VideoTask
   reviewMode: ReviewMode
   config: AppConfig
+  translationIssues: TranslationIssue[]
   nowMs: number
   onDragOver: (e: React.DragEvent) => void
   onDrop: (taskId: string, e: React.DragEvent) => void
@@ -72,6 +73,7 @@ const VideoTaskRow = memo(function VideoTaskRow({
   task,
   reviewMode,
   config,
+  translationIssues,
   nowMs,
   onDragOver,
   onDrop,
@@ -137,6 +139,18 @@ const VideoTaskRow = memo(function VideoTaskRow({
         >
           <Play className="size-3" />
           继续
+        </Button>
+      )
+    } else if (task.status === 'error' && task.subtitlePath && translationIssues.length > 0) {
+      buttons.push(
+        <Button
+          key="retry-missing"
+          variant="outline"
+          size="xs"
+          onClick={() => window.api?.task.retryFailedTranslations(task.id, config)}
+        >
+          <RefreshCcw className="size-3" />
+          仅重翻失败条目
         </Button>
       )
     } else if (task.status === 'error' && task.subtitlePath) {
@@ -274,6 +288,25 @@ const VideoTaskRow = memo(function VideoTaskRow({
               </p>
             ))}
 
+          {task.status === 'error' && translationIssues.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className="inline-flex max-w-full cursor-help items-center gap-1 truncate text-xs text-amber-300">
+                  <FileWarning className="size-3 shrink-0" />
+                  未翻译条目 {translationIssues.length} 条
+                </p>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[560px] whitespace-pre-wrap break-all">
+                <p className="mb-1 text-xs text-amber-300">可仅重翻以下失败条目：</p>
+                {translationIssues.map((issue) => (
+                  <p key={`${task.id}-${issue.id}`} className="text-xs text-muted-foreground">
+                    #{issue.id}: {issue.text}
+                  </p>
+                ))}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
           {!task.error && task.detail && (
             <p className="truncate text-xs text-muted-foreground" title={task.detail}>
               {task.detail}
@@ -292,7 +325,7 @@ const VideoTaskRow = memo(function VideoTaskRow({
 })
 
 export function VideoTable() {
-  const { tasks, config, removeTask, setEditingTaskId } = useAppStore()
+  const { tasks, config, translationIssues, removeTask, setEditingTaskId } = useAppStore()
   const viewportRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
@@ -445,6 +478,7 @@ export function VideoTable() {
             task={task}
             reviewMode={config.reviewMode}
             config={config}
+            translationIssues={translationIssues[task.id] ?? []}
             nowMs={nowMs}
             onDragOver={handleDragOver}
             onDrop={handleDrop}

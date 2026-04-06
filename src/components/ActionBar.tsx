@@ -30,6 +30,7 @@ export function ActionBar() {
   const {
     tasks,
     config,
+    translationIssues,
     sidebarOpen,
     addTasks,
     clearTasks,
@@ -47,6 +48,15 @@ export function ActionBar() {
   const hasPausedTasks = pausedTaskIds.length > 0
   const failedTaskIds = tasks
     .filter((t) => t.status === 'error' && !!t.subtitlePath)
+    .map((t) => t.id)
+  const failedTranslationTaskIds = tasks
+    .filter(
+      (t) =>
+        t.status === 'error' &&
+        !!t.subtitlePath &&
+        Array.isArray(translationIssues[t.id]) &&
+        translationIssues[t.id].length > 0
+    )
     .map((t) => t.id)
   const hasFailedTasks = failedTaskIds.length > 0
 
@@ -135,7 +145,18 @@ export function ActionBar() {
 
   const handleRetryFailed = () => {
     if (!hasFailedTasks) return
-    window.api?.task.resumeAll(failedTaskIds, config)
+
+    if (failedTranslationTaskIds.length > 0) {
+      for (const taskId of failedTranslationTaskIds) {
+        window.api?.task.retryFailedTranslations(taskId, config)
+      }
+    }
+
+    const failedTranslationTaskIdSet = new Set(failedTranslationTaskIds)
+    const normalFailedTaskIds = failedTaskIds.filter((taskId) => !failedTranslationTaskIdSet.has(taskId))
+    if (normalFailedTaskIds.length > 0) {
+      window.api?.task.resumeAll(normalFailedTaskIds, config)
+    }
   }
 
   const handleClear = () => {
@@ -229,7 +250,11 @@ export function ActionBar() {
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          {hasFailedTasks ? '重新开始所有失败且已关联字幕的任务' : '当前没有可重试的失败任务'}
+          {hasFailedTasks
+            ? failedTranslationTaskIds.length > 0
+              ? `批量重翻 ${failedTranslationTaskIds.length} 个任务的失败条目，并重试其余失败任务`
+              : '重新开始所有失败且已关联字幕的任务'
+            : '当前没有可重试的失败任务'}
         </TooltipContent>
       </Tooltip>
 

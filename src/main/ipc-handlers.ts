@@ -20,12 +20,14 @@ import {
   pauseTask,
   resumeTask,
   resumeAllTasks,
+  retryFailedTranslations,
   updateConcurrentPipelineLimit,
   cancelTask,
   cancelAllTasks,
   saveReviewCues,
   confirmReview,
   pauseAllActiveTasks,
+  clearTaskTranslationState,
 } from './services/pipeline'
 import type { AppConfig, Cue, TaskStartInfo, VideoTask } from '../types'
 
@@ -164,6 +166,7 @@ export function registerIpcHandlers(): void {
     if (typeof subtitlePath !== 'string' || !subtitlePath.trim()) return
     replaceTaskSubtitlePathSnapshot(taskId, subtitlePath)
     void deleteTaskCues(taskId)
+    clearTaskTranslationState(taskId, false)
   })
 
   ipcMain.on('task:start', (_event, taskInfos: TaskStartInfo[], config?: AppConfig) => {
@@ -205,6 +208,11 @@ export function registerIpcHandlers(): void {
 
   ipcMain.on('task:resume', (_event, taskId: string, config?: AppConfig) => {
     resumeTask(taskId, config ?? loadConfigSync())
+  })
+
+  ipcMain.on('task:retry-failed-translations', (_event, taskId: string, config?: AppConfig) => {
+    if (typeof taskId !== 'string' || !taskId.trim()) return
+    retryFailedTranslations(taskId, config ?? loadConfigSync())
   })
 
   ipcMain.on('task:resume-all', (_event, taskIds: string[], config?: AppConfig) => {

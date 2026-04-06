@@ -14,6 +14,7 @@ function cloneTask(task: VideoTask): VideoTask {
     ...(task.detail ? { detail: task.detail } : {}),
     ...(task.error ? { error: task.error } : {}),
     ...(task.errorDetail ? { errorDetail: task.errorDetail } : {}),
+    ...(task.translationIssues ? { translationIssues: task.translationIssues.map((item) => ({ ...item })) } : {}),
     ...(task.countdownRemaining !== undefined ? { countdownRemaining: task.countdownRemaining } : {}),
   }
 }
@@ -30,7 +31,8 @@ function isSameTaskSnapshot(a: VideoTask | undefined, b: VideoTask): boolean {
     a.detail === b.detail &&
     a.countdownRemaining === b.countdownRemaining &&
     a.error === b.error &&
-    a.errorDetail === b.errorDetail
+    a.errorDetail === b.errorDetail &&
+    JSON.stringify(a.translationIssues ?? []) === JSON.stringify(b.translationIssues ?? [])
   )
 }
 
@@ -124,6 +126,18 @@ export function updateTaskErrorSnapshot(taskId: string, message: string, detail?
   }))
 }
 
+export function updateTaskTranslationIssuesSnapshot(
+  taskId: string,
+  issues: Array<{ id: number; text: string }>
+): void {
+  updateTaskSnapshot(taskId, (task) => ({
+    ...task,
+    ...(issues.length > 0
+      ? { translationIssues: issues.map((item) => ({ id: item.id, text: item.text })) }
+      : { translationIssues: undefined }),
+  }))
+}
+
 export function updateTaskCountdownSnapshot(taskId: string, remaining: number): void {
   updateTaskSnapshot(taskId, { countdownRemaining: remaining })
 }
@@ -141,6 +155,7 @@ export function replaceTaskSubtitlePathSnapshot(taskId: string, subtitlePath: st
     detail: undefined,
     error: undefined,
     errorDetail: undefined,
+    translationIssues: undefined,
     countdownRemaining: undefined,
   }))
 }

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppConfig, VideoTask, TaskStatus, Cue, ReviewMode } from '../types'
+import type { AppConfig, VideoTask, TaskStatus, Cue, TranslationIssue } from '../types'
 import { DEFAULT_CONFIG } from '../types'
 
 interface TaskCueState {
@@ -11,6 +11,7 @@ interface AppState {
   config: AppConfig
   tasks: VideoTask[]
   taskCues: Record<string, TaskCueState>
+  translationIssues: Record<string, TranslationIssue[]>
   sidebarOpen: boolean
   editingTaskId: string | null
 
@@ -31,30 +32,37 @@ interface AppState {
   updateTaskCues: (id: string, englishCues?: Cue[], chineseCues?: Cue[]) => void
   updateTaskCountdown: (id: string, remaining: number) => void
   updateTaskChineseCues: (id: string, cues: Cue[]) => void
+  setTaskTranslationIssues: (id: string, issues: TranslationIssue[]) => void
 }
 
 function splitTaskCues(tasks: VideoTask[]): {
   tasks: VideoTask[]
   taskCues: Record<string, TaskCueState>
+  translationIssues: Record<string, TranslationIssue[]>
 } {
   const taskCues: Record<string, TaskCueState> = {}
-  const sanitizedTasks = tasks.map(({ englishCues, chineseCues, ...task }) => {
+  const translationIssues: Record<string, TranslationIssue[]> = {}
+  const sanitizedTasks = tasks.map(({ englishCues, chineseCues, translationIssues: issues, ...task }) => {
     if (englishCues !== undefined || chineseCues !== undefined) {
       taskCues[task.id] = {
         ...(englishCues !== undefined ? { englishCues } : {}),
         ...(chineseCues !== undefined ? { chineseCues } : {}),
       }
     }
+    if (Array.isArray(issues) && issues.length > 0) {
+      translationIssues[task.id] = issues.map((item) => ({ id: item.id, text: item.text }))
+    }
     return task
   })
 
-  return { tasks: sanitizedTasks, taskCues }
+  return { tasks: sanitizedTasks, taskCues, translationIssues }
 }
 
 export const useAppStore = create<AppState>((set) => ({
   config: DEFAULT_CONFIG,
   tasks: [],
   taskCues: {},
+  translationIssues: {},
   sidebarOpen: true,
   editingTaskId: null,
 
@@ -70,7 +78,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   setTasks: (tasks) => {
     const next = splitTaskCues(tasks)
-    set({ tasks: next.tasks, taskCues: next.taskCues })
+    set({ tasks: next.tasks, taskCues: next.taskCues, translationIssues: next.translationIssues })
   },
 
   addTasks: (tasks) => {
@@ -78,20 +86,24 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       tasks: [...state.tasks, ...next.tasks],
       taskCues: { ...state.taskCues, ...next.taskCues },
+      translationIssues: { ...state.translationIssues, ...next.translationIssues },
     }))
   },
 
   removeTask: (id) =>
     set((state) => {
       const taskCues = { ...state.taskCues }
+      const translationIssues = { ...state.translationIssues }
       delete taskCues[id]
+      delete translationIssues[id]
       return {
         tasks: state.tasks.filter((t) => t.id !== id),
         taskCues,
+        translationIssues,
       }
     }),
 
-  clearTasks: () => set({ tasks: [], taskCues: {} }),
+  clearTasks: () => set({ tasks: [], taskCues: {}, translationIssues: {} }),
 
   updateTaskStatus: (id, status, progress, detail) =>
     set((state) => {
@@ -177,8 +189,10 @@ export const useAppStore = create<AppState>((set) => ({
       if (!changed) return state
 
       const taskCues = { ...state.taskCues }
+      const translationIssues = { ...state.translationIssues }
       delete taskCues[id]
-      return { tasks, taskCues }
+      delete translationIssues[id]
+      return { tasks, taskCues, translationIssues }
     }),
 
   updateTaskCues: (id, englishCues, chineseCues) =>
@@ -215,4 +229,21 @@ export const useAppStore = create<AppState>((set) => ({
         },
       },
     })),
+
+  setTaskTranslationIssues: (id, issues) =>
+    set((state) => {
+      if (!issues.length) {
+        if (!state.translationIssues[id]) return state
+        const nextIssues = { ...state.translationIssues }
+        delete nextIssues[id]
+        return { translationIssues: nextIssues }
+      }
+
+      return {
+        translationIssues: {
+          ...state.translationIssues,
+          [id]: issues,
+        },
+      }
+    }),
 }))

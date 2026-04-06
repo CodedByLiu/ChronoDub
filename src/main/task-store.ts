@@ -3,11 +3,7 @@ import { dirname, join } from 'path'
 import { existsSync, readFileSync } from 'fs'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import type { VideoTask } from '../types'
-
-interface TaskSnapshotFile {
-  version: 1
-  tasks: VideoTask[]
-}
+import { parseTaskSnapshotFile, sanitizeTaskSnapshot, type TaskSnapshotFile } from './task-store-codec'
 
 const IN_FLIGHT_STATUSES = new Set([
   'parsing',
@@ -22,45 +18,11 @@ function getTaskStorePath(): string {
   return join(app.getPath('userData'), 'tasks.json')
 }
 
-function sanitizeTaskSnapshot(task: VideoTask): VideoTask {
-  const {
-    id,
-    videoPath,
-    videoName,
-    subtitlePath,
-    status,
-    progress,
-    detail,
-    countdownRemaining,
-    error,
-    errorDetail,
-  } = task
-
-  return {
-    id,
-    videoPath,
-    videoName,
-    subtitlePath,
-    status,
-    progress,
-    ...(detail ? { detail } : {}),
-    ...(countdownRemaining !== undefined ? { countdownRemaining } : {}),
-    ...(error ? { error } : {}),
-    ...(errorDetail ? { errorDetail } : {}),
-  }
-}
-
-function parseSnapshotFile(raw: string): VideoTask[] {
-  const parsed = JSON.parse(raw) as TaskSnapshotFile
-  if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.tasks)) return []
-  return parsed.tasks.map(sanitizeTaskSnapshot)
-}
-
 export function loadTaskSnapshotsSync(): VideoTask[] {
   try {
     const filePath = getTaskStorePath()
     if (!existsSync(filePath)) return []
-    return parseSnapshotFile(readFileSync(filePath, 'utf-8'))
+    return parseTaskSnapshotFile(readFileSync(filePath, 'utf-8'))
   } catch {
     return []
   }
@@ -70,7 +32,7 @@ export async function loadTaskSnapshots(): Promise<VideoTask[]> {
   try {
     const filePath = getTaskStorePath()
     const raw = await readFile(filePath, 'utf-8')
-    return parseSnapshotFile(raw)
+    return parseTaskSnapshotFile(raw)
   } catch {
     return []
   }

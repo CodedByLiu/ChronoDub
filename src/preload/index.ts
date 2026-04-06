@@ -42,6 +42,8 @@ const api: IpcApi = {
     resumeAll: (taskIds, config) => ipcRenderer.send('task:resume-all', taskIds, config),
     pause: (taskId) => ipcRenderer.send('task:pause', taskId),
     resume: (taskId, config) => ipcRenderer.send('task:resume', taskId, config),
+    retryFailedTranslations: (taskId, config) =>
+      ipcRenderer.send('task:retry-failed-translations', taskId, config),
     cancel: (taskId) => ipcRenderer.send('task:cancel', taskId),
     cancelAll: (taskIds) => ipcRenderer.send('task:cancel-all', taskIds),
     saveReview: (taskId, cues) => ipcRenderer.send('task:save-review', taskId, cues),
@@ -82,6 +84,12 @@ const api: IpcApi = {
       ) => callback(taskId, englishCues, chineseCues)
       ipcRenderer.on('task:cues-updated', handler)
       return () => ipcRenderer.removeListener('task:cues-updated', handler)
+    },
+    onTranslationIssues: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, taskId: string, issues: any[]) =>
+        callback(taskId, issues)
+      ipcRenderer.on('task:translation-issues', handler)
+      return () => ipcRenderer.removeListener('task:translation-issues', handler)
     },
     onError: (callback) => {
       const handler = (
