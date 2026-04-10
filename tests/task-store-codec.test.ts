@@ -24,7 +24,7 @@ test('sanitizeTaskSnapshot keeps persisted fields and translation issues', () =>
       errorDetail: 'line 4 unchanged',
       detail: 'processing',
       countdownRemaining: 8,
-      translationIssues: [{ id: 4, text: 'Please keep this in Chinese.' }],
+      translationIssues: [{ id: 4, text: 'Please keep this in Chinese.', max_chars: 20 }],
       statusUpdatedAt: Date.now(),
       englishCues: [
         {
@@ -43,6 +43,7 @@ test('sanitizeTaskSnapshot keeps persisted fields and translation issues', () =>
   assert.equal(sanitized.countdownRemaining, 8)
   assert.equal(sanitized.translationIssues?.length, 1)
   assert.equal(sanitized.translationIssues?.[0]?.id, 4)
+  assert.equal(sanitized.translationIssues?.[0]?.max_chars, 20)
   assert.equal((sanitized as unknown as { statusUpdatedAt?: number }).statusUpdatedAt, undefined)
   assert.equal((sanitized as unknown as { englishCues?: unknown[] }).englishCues, undefined)
 })
@@ -77,7 +78,7 @@ test('parseTaskSnapshotFile sanitizes loaded tasks', () => {
           ...createTask({
             status: 'paused',
             progress: 56,
-            translationIssues: [{ id: 7, text: 'left in english' }],
+            translationIssues: [{ id: 7, text: 'left in english', max_chars: 16 }],
           }),
           statusUpdatedAt: Date.now(),
           englishCues: [
@@ -97,6 +98,7 @@ test('parseTaskSnapshotFile sanitizes loaded tasks', () => {
   assert.equal(parsed[0].status, 'paused')
   assert.equal(parsed[0].progress, 56)
   assert.equal(parsed[0].translationIssues?.[0]?.id, 7)
+  assert.equal(parsed[0].translationIssues?.[0]?.max_chars, 16)
   assert.equal((parsed[0] as unknown as { statusUpdatedAt?: number }).statusUpdatedAt, undefined)
   assert.equal((parsed[0] as unknown as { englishCues?: unknown[] }).englishCues, undefined)
 })

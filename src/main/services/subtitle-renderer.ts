@@ -72,6 +72,32 @@ function scaleToRenderWidth(value: number, renderWidth: number): number {
   return Math.round((value * renderWidth) / LAYOUT_SCALE_BASE_WIDTH)
 }
 
+function transparentAssColor(): string {
+  return '&HFF000000'
+}
+
+interface AssStyle {
+  name: string
+  fontFamily: string
+  fontSize: number
+  primaryColor: string
+  secondaryColor: string
+  outlineColor: string
+  backColor: string
+  bold: number
+  italic: number
+  borderStyle: number
+  outline: number
+  shadow: number
+  alignment: number
+  marginX: number
+  marginV: number
+}
+
+function renderStyleLine(style: AssStyle): string {
+  return `Style: ${style.name},${style.fontFamily},${style.fontSize},${style.primaryColor},${style.secondaryColor},${style.outlineColor},${style.backColor},${style.bold},${style.italic},0,0,100,100,0,0,${style.borderStyle},${style.outline},${style.shadow},${style.alignment},${style.marginX},${style.marginX},${style.marginV},1`
+}
+
 export function renderAssSubtitles(
   cues: Cue[],
   style: SubtitleStyleConfig,
@@ -80,27 +106,65 @@ export function renderAssSubtitles(
   const renderTarget = resolveRenderTarget(target)
   const fontFamily = normalizeFontFamily(style.fontFamily)
   const resolvedFontSize = Math.max(20, scaleToRenderHeight(style.fontSize, renderTarget.height))
-  const borderStyle = style.backgroundEnabled ? 4 : 1
-  const outlineWidth = style.outlineEnabled
+  const textOutlineWidth = style.outlineEnabled
     ? Math.max(0, scaleToRenderHeight(style.outlineWidth, renderTarget.height))
     : 0
   const backgroundPadding = style.backgroundEnabled
     ? Math.max(0, scaleToRenderHeight(style.backgroundPadding ?? 0, renderTarget.height))
     : 0
-  const effectiveOutlineWidth = style.backgroundEnabled
-    ? outlineWidth + backgroundPadding
-    : outlineWidth
   const alignment = getAssAlignment(style.position)
   const marginX = Math.max(24, scaleToRenderWidth(120, renderTarget.width))
   const marginV = Math.max(24, scaleToRenderHeight(style.safeMargin, renderTarget.height))
   const primaryColor = toAssColor(style.textColor)
-  const outlineColor = toAssColor(style.outlineColor)
   const backColor = style.backgroundEnabled
     ? toAssColor(style.backgroundColor, style.backgroundOpacity)
     : '&H00000000'
-  const shadowSize = style.backgroundEnabled ? Math.max(2, Math.round(resolvedFontSize * 0.08)) : 0
+  const outlineColor = toAssColor(style.outlineColor)
+  const textShadowSize =
+    style.outlineEnabled && style.backgroundEnabled
+      ? Math.max(2, Math.round(resolvedFontSize * 0.08))
+      : 0
   const bold = style.bold ? -1 : 0
   const italic = style.italic ? -1 : 0
+  const backgroundBoxSize = backgroundPadding + (style.outlineEnabled ? textOutlineWidth : 0)
+
+  const styles: AssStyle[] = []
+  if (style.backgroundEnabled) {
+    styles.push({
+      name: 'Bg',
+      fontFamily,
+      fontSize: resolvedFontSize,
+      primaryColor: transparentAssColor(),
+      secondaryColor: transparentAssColor(),
+      outlineColor: '&H00000000',
+      backColor,
+      bold,
+      italic,
+      borderStyle: 3,
+      outline: backgroundBoxSize,
+      shadow: 0,
+      alignment,
+      marginX,
+      marginV,
+    })
+  }
+  styles.push({
+    name: 'Text',
+    fontFamily,
+    fontSize: resolvedFontSize,
+    primaryColor,
+    secondaryColor: primaryColor,
+    outlineColor,
+    backColor: '&H00000000',
+    bold,
+    italic,
+    borderStyle: 1,
+    outline: textOutlineWidth,
+    shadow: style.outlineEnabled ? textShadowSize : 0,
+    alignment,
+    marginX,
+    marginV,
+  })
 
   const header = `[Script Info]
 ScriptType: v4.00+
@@ -111,17 +175,26 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${fontFamily},${resolvedFontSize},${primaryColor},${primaryColor},${outlineColor},${backColor},${bold},${italic},0,0,100,100,0,0,${borderStyle},${effectiveOutlineWidth},${shadowSize},${alignment},${marginX},${marginX},${marginV},1
+${styles.map(renderStyleLine).join('\n')}
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
 
-  const dialogues = cues
-    .filter((cue) => cue.endUs > cue.startUs && cue.text.trim())
-    .map(
-      (cue) =>
-        `Dialogue: 0,${assTime(cue.startUs)},${assTime(cue.endUs)},Default,,0,0,0,,${escapeAssText(cue.text)}`
-    )
+  const dialogues: string[] = []
+  for (const cue of cues) {
+    if (cue.endUs <= cue.startUs || !cue.text.trim()) continue
+    const start = assTime(cue.startUs)
+    const end = assTime(cue.endUs)
+    const text = escapeAssText(cue.text)
+
+    if (style.backgroundEnabled) {
+      dialogues.push(`Dialogue: 0,${start},${end},Bg,,0,0,0,,${text}`)
+      dialogues.push(`Dialogue: 1,${start},${end},Text,,0,0,0,,${text}`)
+      continue
+    }
+
+    dialogues.push(`Dialogue: 0,${start},${end},Text,,0,0,0,,${text}`)
+  }
 
   return `${header}\n${dialogues.join('\n')}\n`
 }

@@ -48,7 +48,13 @@ export function sanitizeTaskSnapshot(task: VideoTask): VideoTask {
     ...(error ? { error } : {}),
     ...(errorDetail ? { errorDetail } : {}),
     ...(translationIssues && translationIssues.length > 0
-      ? { translationIssues: translationIssues.map((item) => ({ id: item.id, text: item.text })) }
+      ? {
+          translationIssues: translationIssues.map((item) => ({
+            id: item.id,
+            text: item.text,
+            ...(typeof item.max_chars === 'number' ? { max_chars: item.max_chars } : {}),
+          })),
+        }
       : {}),
   }
 }
@@ -57,15 +63,23 @@ function isTaskStatus(value: unknown): value is TaskStatus {
   return typeof value === 'string' && TASK_STATUS_SET.has(value as TaskStatus)
 }
 
-function parseTranslationIssues(raw: unknown): Array<{ id: number; text: string }> | undefined {
+function parseTranslationIssues(
+  raw: unknown
+): Array<{ id: number; text: string; max_chars?: number }> | undefined {
   if (!Array.isArray(raw)) return undefined
-  const issues: Array<{ id: number; text: string }> = []
+  const issues: Array<{ id: number; text: string; max_chars?: number }> = []
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue
-    const issue = item as { id?: unknown; text?: unknown }
+    const issue = item as { id?: unknown; text?: unknown; max_chars?: unknown }
     if (typeof issue.id !== 'number' || !Number.isFinite(issue.id)) continue
     if (typeof issue.text !== 'string') continue
-    issues.push({ id: issue.id, text: issue.text })
+    issues.push({
+      id: issue.id,
+      text: issue.text,
+      ...(typeof issue.max_chars === 'number' && Number.isFinite(issue.max_chars)
+        ? { max_chars: issue.max_chars }
+        : {}),
+    })
   }
   return issues.length > 0 ? issues : undefined
 }

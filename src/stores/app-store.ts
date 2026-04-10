@@ -50,7 +50,11 @@ function splitTaskCues(tasks: VideoTask[]): {
       }
     }
     if (Array.isArray(issues) && issues.length > 0) {
-      translationIssues[task.id] = issues.map((item) => ({ id: item.id, text: item.text }))
+      translationIssues[task.id] = issues.map((item) => ({
+        id: item.id,
+        text: item.text,
+        ...(typeof item.max_chars === 'number' ? { max_chars: item.max_chars } : {}),
+      }))
     }
     return task
   })

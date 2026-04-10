@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { dirname, join } from 'path'
 import { existsSync, readFileSync } from 'fs'
-import { mkdir, readFile, writeFile } from 'fs/promises'
+import { mkdir, writeFile } from 'fs/promises'
 import type { VideoTask } from '../types'
 import { parseTaskSnapshotFile, sanitizeTaskSnapshot, type TaskSnapshotFile } from './task-store-codec'
 
@@ -23,16 +23,6 @@ export function loadTaskSnapshotsSync(): VideoTask[] {
     const filePath = getTaskStorePath()
     if (!existsSync(filePath)) return []
     return parseTaskSnapshotFile(readFileSync(filePath, 'utf-8'))
-  } catch {
-    return []
-  }
-}
-
-export async function loadTaskSnapshots(): Promise<VideoTask[]> {
-  try {
-    const filePath = getTaskStorePath()
-    const raw = await readFile(filePath, 'utf-8')
-    return parseTaskSnapshotFile(raw)
   } catch {
     return []
   }

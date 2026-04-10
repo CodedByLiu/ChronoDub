@@ -126,7 +126,7 @@ export function FontCombobox({
                   setOpen(false)
                 }
               }}
-              placeholder="输入字体名搜索，如 yahei"
+              placeholder="输入字体名搜索，例如 yahei"
               className="pl-8"
             />
           </div>

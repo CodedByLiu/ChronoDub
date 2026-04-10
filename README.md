@@ -28,7 +28,7 @@ This makes it suitable for tutorial videos, technical walkthroughs, and other na
 - Batch import multiple videos from the same folder.
 - Auto-detect matching subtitle files by combining naming heuristics with subtitle-content language checks, so the app prefers the original English track instead of only trusting file suffixes.
 - Parse `SRT`, `VTT`, and `ASS/SSA` subtitles.
-- Translate subtitles with DeepSeek using segment-level translation.
+- Translate subtitles with DeepSeek using a single default segment-level strategy with per-segment text budget guidance.
 - Keep terminology stable with a glossary and review the generated Chinese subtitles before dubbing.
 - Generate Chinese dubbing with Edge TTS and preview voices in the app.
 - Measure synthesized duration, apply timing-safe fallback strategies when a segment is too long, and retime cues against actual synthesized speech boundaries.
@@ -37,6 +37,15 @@ This makes it suitable for tutorial videos, technical walkthroughs, and other na
 - Configure burned subtitle styles with searchable system fonts, size, bold, italic, colors, outline, background fill, background padding, and top/bottom safe-area placement.
 - Choose whether output files are written into per-video subfolders or directly into the selected output directory.
 - Limit concurrent task execution with configurable local scheduling.
+
+## Quick Start (5 Minutes)
+
+Recommended first-run path:
+
+1. Set `DeepSeek API Key`, `Output Directory`, and `Voice` in the config panel.
+2. Keep `Max Concurrent Tasks = 2` for the first run.
+3. Import one short video (1-3 minutes), confirm subtitle auto-detection, then run.
+4. After quality is confirmed, process longer videos in batches.
 
 ## Workflow
 
@@ -216,13 +225,16 @@ If multiple source videos share the same basename, ChronoDub will automatically 
 - `Review Mode`
   - `Auto`: start an editable review session with a countdown.
   - `Manual`: wait until you explicitly confirm the Chinese subtitle review.
+- `Translation Strategy`
+  - The app uses one built-in default translation strategy.
+  - Segment text budget constraints are applied automatically to reduce overlong translations.
 - `Subtitle Output Mode`
   - `External`: export the dubbed video and a `.srt` file.
   - `Burned`: export a single video with hardcoded Chinese subtitles.
 - `Burned Subtitle Style`
   - System font picker with search
   - Font size, bold, italic
-  - Text color
+  - Text color (default: `#F3D43B`)
   - Outline enable, width, color
   - Background enable, color, opacity, padding
   - Top-safe or bottom-safe placement
@@ -260,8 +272,11 @@ scripts/
 - If translation fails, verify the DeepSeek API key and API connectivity.
 - If TTS fails, check network access and test the configured Edge voice in the app first.
 - If muxing fails, confirm `ffmpeg` and `ffprobe` are installed and discoverable.
+- For longer videos, lower local concurrency first (`2` is the safest baseline).
+- If you see Electron GPU process crashes on Windows, it is typically an OS/driver rendering issue, not subtitle logic. Retry with fewer concurrent tasks and avoid running multiple GPU-heavy apps in parallel.
 - If a task was interrupted by system sleep, reopen the app and resume it from the task list.
 - If burned subtitle styling looks wrong on one specific video, verify the video metadata first; ChronoDub now scales subtitle layout to the detected display size, including rotated videos.
+- If a task is cancelled or fails during output stage, ChronoDub now cleans partial output artifacts to reduce broken-file leftovers.
 
 ## Contributing
 

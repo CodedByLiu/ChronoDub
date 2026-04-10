@@ -1,35 +1,35 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { dialog, ipcMain } from 'electron'
 import { existsSync } from 'fs'
+import type { AppConfig, Cue, TaskStartInfo, VideoTask } from '../types'
 import { loadConfig, loadConfigSync, saveConfig } from './config-store'
+import { setRuntimeConfig } from './runtime-config-store'
 import { parseSubtitleFile, saveSubtitleFile } from './services/subtitle-parser'
 import { detectSubtitleForVideo } from './services/subtitle-detect'
 import { listSystemFonts } from './services/font-service'
 import { getChineseVoices, synthesizeToBuffer } from './services/edge-tts'
-import { deleteTaskCues, loadTaskCues } from './task-cue-store'
-import { setRuntimeConfig } from './runtime-config-store'
+import {
+  cancelAllTasks,
+  cancelTask,
+  clearTaskTranslationState,
+  confirmReview,
+  pauseAllActiveTasks,
+  pauseTask,
+  resumeAllTasks,
+  resumeTask,
+  retryFailedTranslations,
+  saveReviewCues,
+  startTasks,
+  updateConcurrentPipelineLimit,
+} from './services/pipeline'
 import {
   getTaskSnapshots,
   registerTasks,
-  replaceTaskSubtitlePathSnapshot,
   removeTaskSnapshot,
   removeTaskSnapshots,
+  replaceTaskSubtitlePathSnapshot,
   updateTaskSubtitlePathSnapshot,
 } from './task-registry'
-import {
-  startTasks,
-  pauseTask,
-  resumeTask,
-  resumeAllTasks,
-  retryFailedTranslations,
-  updateConcurrentPipelineLimit,
-  cancelTask,
-  cancelAllTasks,
-  saveReviewCues,
-  confirmReview,
-  pauseAllActiveTasks,
-  clearTaskTranslationState,
-} from './services/pipeline'
-import type { AppConfig, Cue, TaskStartInfo, VideoTask } from '../types'
+import { deleteTaskCues, loadTaskCues } from './task-cue-store'
 
 const INVOKE_CHANNELS = [
   'config:load',
@@ -48,9 +48,9 @@ const INVOKE_CHANNELS = [
 ] as const
 
 function removeInvokeHandlers(): void {
-  for (const ch of INVOKE_CHANNELS) {
+  for (const channel of INVOKE_CHANNELS) {
     try {
-      ipcMain.removeHandler(ch)
+      ipcMain.removeHandler(channel)
     } catch {
       /* noop */
     }
@@ -97,7 +97,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('subtitle:detect', async (_event, videoPath: string) => {
-    return await detectSubtitleForVideo(videoPath)
+    return detectSubtitleForVideo(videoPath)
   })
 
   ipcMain.handle('subtitle:list-fonts', async () => {
@@ -120,7 +120,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('tts:test-voice', async (_event, voice: string) => {
     try {
-      const testText = '你好，这是一段语音测试。'
+      const testText = '你好，这是一个语音测试。'
       return await synthesizeToBuffer(testText, voice)
     } catch (err) {
       console.error('语音测试失败:', err)
@@ -141,9 +141,7 @@ export function registerIpcHandlers(): void {
     saveSubtitleFile(filePath, cues)
   })
 
-  ipcMain.handle('task:load-snapshot', async () => {
-    return getTaskSnapshots()
-  })
+  ipcMain.handle('task:load-snapshot', async () => getTaskSnapshots())
 
   ipcMain.handle('task:load-cues', async (_event, taskId: string) => {
     if (typeof taskId !== 'string' || !taskId.trim()) return null
@@ -171,10 +169,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.on('task:start', (_event, taskInfos: TaskStartInfo[], config?: AppConfig) => {
     const effectiveConfig = config ?? loadConfigSync()
-    const taskIds = taskInfos.map((t) => t.id)
-    const tasks = taskInfos.map((t) => ({
-      videoPath: t.videoPath,
-      subtitlePath: t.subtitlePath,
+    const taskIds = taskInfos.map((item) => item.id)
+    const tasks = taskInfos.map((item) => ({
+      videoPath: item.videoPath,
+      subtitlePath: item.subtitlePath,
     }))
     startTasks(taskIds, tasks, effectiveConfig)
   })
@@ -185,6 +183,19 @@ export function registerIpcHandlers(): void {
 
   ipcMain.on('task:pause-all', () => {
     pauseAllActiveTasks()
+  })
+
+  ipcMain.on('task:resume', (_event, taskId: string, config?: AppConfig) => {
+    resumeTask(taskId, config ?? loadConfigSync())
+  })
+
+  ipcMain.on('task:resume-all', (_event, taskIds: string[], config?: AppConfig) => {
+    resumeAllTasks(Array.isArray(taskIds) ? taskIds : [], config ?? loadConfigSync())
+  })
+
+  ipcMain.on('task:retry-failed-translations', (_event, taskId: string, config?: AppConfig) => {
+    if (typeof taskId !== 'string' || !taskId.trim()) return
+    retryFailedTranslations(taskId, config ?? loadConfigSync())
   })
 
   ipcMain.on('task:cancel', (_event, taskId: string) => {
@@ -204,25 +215,5 @@ export function registerIpcHandlers(): void {
 
   ipcMain.on('task:confirm-review', (_event, taskId: string, cues: Cue[]) => {
     void confirmReview(taskId, cues)
-  })
-
-  ipcMain.on('task:resume', (_event, taskId: string, config?: AppConfig) => {
-    resumeTask(taskId, config ?? loadConfigSync())
-  })
-
-  ipcMain.on('task:retry-failed-translations', (_event, taskId: string, config?: AppConfig) => {
-    if (typeof taskId !== 'string' || !taskId.trim()) return
-    retryFailedTranslations(taskId, config ?? loadConfigSync())
-  })
-
-  ipcMain.on('task:resume-all', (_event, taskIds: string[], config?: AppConfig) => {
-    resumeAllTasks(Array.isArray(taskIds) ? taskIds : [], config ?? loadConfigSync())
-  })
-}
-
-export function sendToRenderer(channel: string, ...args: unknown[]): void {
-  const windows = BrowserWindow.getAllWindows()
-  windows.forEach((win) => {
-    win.webContents.send(channel, ...args)
   })
 }

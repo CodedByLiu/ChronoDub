@@ -1,4 +1,4 @@
-export type MicrosecondTimestamp = number
+﻿export type MicrosecondTimestamp = number
 
 export type TaskStatus =
   | 'waiting'
@@ -97,7 +97,7 @@ export const DEFAULT_SUBTITLE_STYLE: SubtitleStyleConfig = {
   fontSize: 42,
   bold: false,
   italic: false,
-  textColor: '#FFFFFF',
+  textColor: '#F3D43B',
   outlineEnabled: false,
   outlineWidth: 3,
   outlineColor: '#000000',
@@ -127,7 +127,7 @@ export const TASK_STATUS_META: Record<TaskStatus, { label: string; color: string
   queued: { label: '排队中', color: 'slate' },
   parsing: { label: '解析中', color: 'blue' },
   translating: { label: '翻译中', color: 'purple' },
-  reviewing: { label: '待审核', color: 'amber' },
+  reviewing: { label: '待审校', color: 'amber' },
   synthesizing: { label: '合成中', color: 'orange' },
   assembling: { label: '装配中', color: 'cyan' },
   encoding: { label: '封装中', color: 'indigo' },
@@ -150,6 +150,7 @@ export interface DeepseekTestResult {
 export interface TranslationIssue {
   id: number
   text: string
+  max_chars?: number
 }
 
 export interface IpcApi {
@@ -216,3 +217,4 @@ declare global {
     api: IpcApi
   }
 }
+

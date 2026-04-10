@@ -215,7 +215,7 @@ export function SubtitleEditor() {
                   return (
                     <div key={cue?.id ?? `en-${i}`} className={ROW_MIN}>
                       <span className={IDX_CLS}>{i + 1}</span>
-                      <span className={TIME_CLS}>{cue ? formatTimestamp(cue.startUs) : '—'}</span>
+                      <span className={TIME_CLS}>{cue ? formatTimestamp(cue.startUs) : '--'}</span>
                       <p className={`${TEXT_BLOCK} min-h-[4.5rem] whitespace-pre-wrap break-words`}>
                         {cue?.text ?? ''}
                       </p>
@@ -251,7 +251,7 @@ export function SubtitleEditor() {
                           ? formatTimestamp(cue.startUs)
                           : en
                             ? formatTimestamp(en.startUs)
-                            : '—'}
+                            : '--'}
                       </span>
                       {isEditable ? (
                         <Textarea

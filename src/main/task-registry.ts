@@ -128,12 +128,18 @@ export function updateTaskErrorSnapshot(taskId: string, message: string, detail?
 
 export function updateTaskTranslationIssuesSnapshot(
   taskId: string,
-  issues: Array<{ id: number; text: string }>
+  issues: Array<{ id: number; text: string; max_chars?: number }>
 ): void {
   updateTaskSnapshot(taskId, (task) => ({
     ...task,
     ...(issues.length > 0
-      ? { translationIssues: issues.map((item) => ({ id: item.id, text: item.text })) }
+      ? {
+          translationIssues: issues.map((item) => ({
+            id: item.id,
+            text: item.text,
+            ...(typeof item.max_chars === 'number' ? { max_chars: item.max_chars } : {}),
+          })),
+        }
       : { translationIssues: undefined }),
   }))
 }

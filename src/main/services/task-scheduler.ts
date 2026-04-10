@@ -1,7 +1,10 @@
+import type { AppConfig } from '../../types'
+
 export interface ScheduledTaskEntry {
   taskId: string
   videoPath: string
   subtitlePath: string
+  configSnapshot?: AppConfig
 }
 
 interface TaskSchedulerCallbacks {
