@@ -13,7 +13,7 @@ import { compressTranslation } from './deepseek-compress'
 const BATCH_SIZE = 15
 const MAX_RETRIES = 3
 const SINGLE_ITEM_RETRIES = 2
-export const TRANSLATION_STRATEGY_VERSION = '2026-04-10-v4'
+export const TRANSLATION_STRATEGY_VERSION = '2026-05-10-v5'
 
 interface TranslationResult {
   translations: Array<{ id: number; text: string }>
@@ -63,7 +63,8 @@ function toIssueItems(items: TranslationInputItem[]): TranslationIssueItem[] {
 function buildTranslateSystemPrompt(
   dictionary: Array<{ en: string; zh: string }>,
   strictMode: boolean,
-  hasBudgetConstraints: boolean
+  hasBudgetConstraints: boolean,
+  repairMode = false
 ): string {
   const dictLines =
     dictionary.length > 0
@@ -74,7 +75,8 @@ function buildTranslateSystemPrompt(
       : ''
 
   return [
-    'You are a professional subtitle translator from English to Simplified Chinese.',
+    'You are a professional subtitle translator from English to Simplified Chinese for a Chinese voice-over (TTS dubbing) pipeline.',
+    'Your output text will be read aloud by a Chinese TTS engine, so it must sound natural in spoken Mandarin.',
     'Translate each line into natural and accurate spoken-style Chinese.',
     'Do not over-compress: for full English sentences, return full Chinese sentences.',
     'Keep discourse connectors and logic words when present (for example: so, then, but, therefore).',
@@ -90,16 +92,40 @@ function buildTranslateSystemPrompt(
       ? '5. Must return exactly one translation for every input id. No missing ids. No extra ids.'
       : '',
     strictMode ? '6. Full English sentences must be translated to Chinese.' : '',
+    '7. Output text MUST be readable by a Chinese TTS engine. Handle untranslatable content as follows:',
+    '   - Person names: transliterate to Chinese characters (e.g., "John" -> "约翰", "Sam Altman" -> "山姆·奥特曼").',
+    '   - Common brand or product names: keep short English as-is inside Chinese context (e.g., "iPhone" stays as "iPhone", "Try GitHub" -> "试试 GitHub").',
+    '   - URLs, code identifiers, file paths, long IDs: do NOT keep the literal string. Paraphrase the reference instead (e.g., "check out github.com/foo/bar" -> "去看看 GitHub 上的项目链接").',
+    '   - For any line that is a full sentence, the output MUST contain Chinese characters; never return a Chinese-character-free output for a sentence.',
+    repairMode ? buildRepairSection() : '',
   ]
     .filter(Boolean)
     .join('\n')
+}
+
+function buildRepairSection(): string {
+  return [
+    '',
+    'Repair mode: a previous attempt at this line was rejected by the validator. Common rejection reasons:',
+    '- Output looked like English (no Chinese characters).',
+    '- Output was empty.',
+    '- Output was over-compressed (e.g., source "This is the string." compressed down to just "字符串。").',
+    'For this retry, you MUST:',
+    '- Include Chinese characters that capture the full meaning of the source.',
+    '- For "this/that/it is X" style sentences, return a complete Chinese sentence.',
+    '  Example: "This is the string." -> "这就是这个字符串。" (NOT just "字符串。").',
+    '  Example: "That was a great idea." -> "那是个好主意。" (NOT just "好主意。").',
+    '- For names or proper nouns, transliterate to Chinese rather than returning the English name unchanged when the source is a full sentence.',
+    '- Keep the result natural for Chinese TTS narration; avoid leaving raw URLs, file paths, or long identifiers in the spoken output.',
+  ].join('\n')
 }
 
 async function requestBatchTranslations(
   items: TranslationInputItem[],
   apiKey: string,
   dictionary: Array<{ en: string; zh: string }>,
-  strictMode: boolean
+  strictMode: boolean,
+  repairMode = false
 ): Promise<Map<number, string>> {
   const hasBudgetConstraints = items.some(
     (item) => typeof item.maxChars === 'number' && item.maxChars > 0
@@ -115,7 +141,7 @@ async function requestBatchTranslations(
     [
       {
         role: 'system',
-        content: buildTranslateSystemPrompt(dictionary, strictMode, hasBudgetConstraints),
+        content: buildTranslateSystemPrompt(dictionary, strictMode, hasBudgetConstraints, repairMode),
       },
       { role: 'user', content: JSON.stringify(payloadItems) },
     ],
@@ -169,7 +195,7 @@ async function recoverMissingTranslations(
   for (const item of missingItems) {
     for (let attempt = 0; attempt < SINGLE_ITEM_RETRIES; attempt++) {
       try {
-        const raw = await requestBatchTranslations([item], apiKey, dictionary, true)
+        const raw = await requestBatchTranslations([item], apiKey, dictionary, true, true)
         const { resolved } = validateBatchTranslations([item], raw)
         const translated = resolved.get(item.id)
         if (translated) {
