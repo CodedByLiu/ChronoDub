@@ -13,7 +13,7 @@ import { compressTranslation } from './deepseek-compress'
 const BATCH_SIZE = 15
 const MAX_RETRIES = 3
 const SINGLE_ITEM_RETRIES = 2
-export const TRANSLATION_STRATEGY_VERSION = '2026-05-10-v5'
+export const TRANSLATION_STRATEGY_VERSION = '2026-05-11-v8'
 
 interface TranslationResult {
   translations: Array<{ id: number; text: string }>
@@ -31,33 +31,13 @@ export interface TranslationIssueItem {
   max_chars?: number
 }
 
-export class TranslationIncompleteError extends Error {
-  unresolvedItems: TranslationIssueItem[]
-  partialTranslations: Map<number, string>
-
-  constructor(
-    message: string,
-    partialTranslations: Map<number, string>,
-    unresolvedItems: TranslationIssueItem[]
-  ) {
-    super(message)
-    this.name = 'TranslationIncompleteError'
-    this.partialTranslations = new Map(partialTranslations)
-    this.unresolvedItems = unresolvedItems.map((item) => ({ ...item }))
-    Object.setPrototypeOf(this, new.target.prototype)
-  }
+export interface TranslationOutcome {
+  translations: Map<number, string>
+  issues: TranslationIssueItem[]
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function toIssueItems(items: TranslationInputItem[]): TranslationIssueItem[] {
-  return items.map((item) => ({
-    id: item.id,
-    text: item.text,
-    ...(typeof item.maxChars === 'number' && item.maxChars > 0 ? { max_chars: item.maxChars } : {}),
-  }))
 }
 
 function buildTranslateSystemPrompt(
@@ -175,7 +155,7 @@ function validateBatchTranslations(
     }
 
     const normalized = normalizeSpaces(output)
-    if (!isAcceptableTranslatedText(item.text, normalized)) {
+    if (!isAcceptableTranslatedText(item.text, normalized, item.maxChars)) {
       unresolved.push(item)
       continue
     }
@@ -188,7 +168,8 @@ function validateBatchTranslations(
 async function recoverMissingTranslations(
   missingItems: TranslationInputItem[],
   apiKey: string,
-  dictionary: Array<{ en: string; zh: string }>
+  dictionary: Array<{ en: string; zh: string }>,
+  rawCapture: Map<number, string>
 ): Promise<Map<number, string>> {
   const recovered = new Map<number, string>()
 
@@ -196,6 +177,11 @@ async function recoverMissingTranslations(
     for (let attempt = 0; attempt < SINGLE_ITEM_RETRIES; attempt++) {
       try {
         const raw = await requestBatchTranslations([item], apiKey, dictionary, true, true)
+        const rawText = raw.get(item.id)
+        if (typeof rawText === 'string') {
+          const candidate = normalizeSpaces(rawText)
+          if (candidate) rawCapture.set(item.id, candidate)
+        }
         const { resolved } = validateBatchTranslations([item], raw)
         const translated = resolved.get(item.id)
         if (translated) {
@@ -219,37 +205,50 @@ async function translateBatch(
   items: TranslationInputItem[],
   apiKey: string,
   dictionary: Array<{ en: string; zh: string }>
-): Promise<Map<number, string>> {
+): Promise<TranslationOutcome> {
+  const lastRawByItem = new Map<number, string>()
+
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    try {
-      const parsed = await requestBatchTranslations(items, apiKey, dictionary, true)
-      const { resolved, unresolved } = validateBatchTranslations(items, parsed)
-      if (unresolved.length === 0) return resolved
-
-      if (attempt < MAX_RETRIES - 1) {
-        await sleep(1000 * (attempt + 1))
-        continue
-      }
-
-      const recovered = await recoverMissingTranslations(unresolved, apiKey, dictionary)
-      for (const [id, text] of recovered) resolved.set(id, text)
-      const unresolvedAfterRecover = unresolved.filter((item) => !resolved.has(item.id))
-      if (unresolvedAfterRecover.length === 0) return resolved
-
-      throw new TranslationIncompleteError(
-        `DeepSeek translation result is incomplete. ${unresolvedAfterRecover.length} item(s) still unresolved (id: ${unresolvedAfterRecover
-          .map((item) => item.id)
-          .join(', ')}).`,
-        resolved,
-        toIssueItems(unresolvedAfterRecover)
-      )
-    } catch (err) {
-      if (attempt === MAX_RETRIES - 1) throw err
-      await sleep(1000 * (attempt + 1))
+    const parsed = await requestBatchTranslations(items, apiKey, dictionary, true)
+    for (const [id, text] of parsed) {
+      const candidate = normalizeSpaces(text)
+      if (candidate) lastRawByItem.set(id, candidate)
     }
+    const { resolved, unresolved } = validateBatchTranslations(items, parsed)
+    if (unresolved.length === 0) return { translations: resolved, issues: [] }
+
+    if (attempt < MAX_RETRIES - 1) {
+      await sleep(1000 * (attempt + 1))
+      continue
+    }
+
+    const recovered = await recoverMissingTranslations(unresolved, apiKey, dictionary, lastRawByItem)
+    for (const [id, text] of recovered) resolved.set(id, text)
+    const stillFailing = unresolved.filter((item) => !resolved.has(item.id))
+    if (stillFailing.length === 0) return { translations: resolved, issues: [] }
+
+    const issues: TranslationIssueItem[] = []
+    for (const item of stillFailing) {
+      const fallback = lastRawByItem.get(item.id) ?? normalizeSpaces(item.text)
+      resolved.set(item.id, fallback)
+      issues.push({
+        id: item.id,
+        text: item.text,
+        ...(typeof item.maxChars === 'number' && item.maxChars > 0 ? { max_chars: item.maxChars } : {}),
+      })
+    }
+    return { translations: resolved, issues }
   }
 
   throw new Error('translateBatch: exceeded max retries')
+}
+
+function isUntranslatableSource(text: string): boolean {
+  const normalized = normalizeSpaces(text)
+  if (!normalized) return true
+  if (/[A-Za-z]{3,}/.test(normalized)) return false
+  if (/[㐀-鿿]/u.test(normalized)) return false
+  return true
 }
 
 async function translateItems(
@@ -257,25 +256,28 @@ async function translateItems(
   apiKey: string,
   dictionary: Array<{ en: string; zh: string }>,
   betweenBatches?: () => void | Promise<void>
-): Promise<Map<number, string>> {
-  const result = new Map<number, string>()
+): Promise<TranslationOutcome> {
+  const translations = new Map<number, string>()
+  const issues: TranslationIssueItem[] = []
+  const translatable: TranslationInputItem[] = []
 
-  for (let i = 0; i < items.length; i += BATCH_SIZE) {
-    await betweenBatches?.()
-    const batch = items.slice(i, i + BATCH_SIZE)
-    try {
-      const batchResult = await translateBatch(batch, apiKey, dictionary)
-      for (const [id, text] of batchResult) result.set(id, text)
-    } catch (err) {
-      if (err instanceof TranslationIncompleteError) {
-        for (const [id, text] of err.partialTranslations) result.set(id, text)
-        throw new TranslationIncompleteError(err.message, result, err.unresolvedItems)
-      }
-      throw err
+  for (const item of items) {
+    if (isUntranslatableSource(item.text)) {
+      translations.set(item.id, normalizeSpaces(item.text))
+      continue
     }
+    translatable.push(item)
   }
 
-  return result
+  for (let i = 0; i < translatable.length; i += BATCH_SIZE) {
+    await betweenBatches?.()
+    const batch = translatable.slice(i, i + BATCH_SIZE)
+    const outcome = await translateBatch(batch, apiKey, dictionary)
+    for (const [id, text] of outcome.translations) translations.set(id, text)
+    for (const issue of outcome.issues) issues.push(issue)
+  }
+
+  return { translations, issues }
 }
 
 export async function testDeepseekConnection(
@@ -290,7 +292,7 @@ export async function translateSegments(
   dictionary: Array<{ en: string; zh: string }>,
   maxCharsPerSegment?: Map<number, number>,
   betweenBatches?: () => void | Promise<void>
-): Promise<Map<number, string>> {
+): Promise<TranslationOutcome> {
   return translateItems(
     segments.map((segment) => ({
       id: segment.id,

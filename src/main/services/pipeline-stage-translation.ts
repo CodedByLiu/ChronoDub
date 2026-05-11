@@ -4,7 +4,6 @@ import {
   applyTerminologyToChinese,
   isAcceptableTranslatedText,
   translateSegments,
-  TranslationIncompleteError,
 } from './deepseek'
 import { ffprobe } from './ffmpeg'
 import {
@@ -129,12 +128,14 @@ export async function runTranslationStage(context: PipelineStageContext): Promis
   const pendingSegments = segments.filter((segment) => {
     const cached = translations.get(segment.id)
     if (typeof cached !== 'string') return true
-    if (!isAcceptableTranslatedText(segment.textEn, cached)) {
+    if (!isAcceptableTranslatedText(segment.textEn, cached, segmentBudgetMap.get(segment.id))) {
       translations.delete(segment.id)
       return true
     }
     return false
   })
+
+  const stageIssues: Array<{ id: number; text: string; max_chars?: number }> = []
 
   if (pendingSegments.length > 0) {
     const pendingBudgetMap = new Map<number, number>()
@@ -143,58 +144,32 @@ export async function runTranslationStage(context: PipelineStageContext): Promis
       if (budget !== undefined) pendingBudgetMap.set(segment.id, budget)
     }
 
-    try {
-      const translatedPending = await translateSegments(
-        pendingSegments.map((segment) => ({ id: segment.id, text: segment.textEn })),
-        config.deepseekKey,
-        config.dictionary,
-        pendingBudgetMap.size > 0 ? pendingBudgetMap : undefined,
-        async () => {
-          await checkPaused(taskId)
-          checkCancelled(taskId)
-        }
-      )
-
-      for (const [id, text] of translatedPending) {
-        translations.set(id, text)
+    const outcome = await translateSegments(
+      pendingSegments.map((segment) => ({ id: segment.id, text: segment.textEn })),
+      config.deepseekKey,
+      config.dictionary,
+      pendingBudgetMap.size > 0 ? pendingBudgetMap : undefined,
+      async () => {
+        await checkPaused(taskId)
+        checkCancelled(taskId)
       }
-      setTaskSegmentTranslations(taskId, translationConfigSignature, translations)
-    } catch (err) {
-      if (err instanceof TranslationIncompleteError) {
-        for (const [id, text] of err.partialTranslations) {
-          translations.set(id, text)
-        }
-        setTaskSegmentTranslations(taskId, translationConfigSignature, translations)
-        setTaskTranslationIssues(taskId, err.unresolvedItems)
-      }
-      throw err
-    }
-  }
-
-  const unresolvedSegments = segments.filter((segment) => {
-    const translated = translations.get(segment.id)
-    return typeof translated !== 'string' || !isAcceptableTranslatedText(segment.textEn, translated)
-  })
-  if (unresolvedSegments.length > 0) {
-    const unresolvedItems = unresolvedSegments.map((segment) => {
-      const maxChars = segmentBudgetMap.get(segment.id)
-      return {
-        id: segment.id,
-        text: segment.textEn,
-        ...(typeof maxChars === 'number' ? { max_chars: maxChars } : {}),
-      }
-    })
-    setTaskTranslationIssues(taskId, unresolvedItems)
-    throw new TranslationIncompleteError(
-      `DeepSeek translation result is incomplete. ${unresolvedItems.length} item(s) still unresolved (id: ${unresolvedItems
-        .map((item) => item.id)
-        .join(', ')}).`,
-      translations,
-      unresolvedItems
     )
+
+    for (const [id, text] of outcome.translations) {
+      translations.set(id, text)
+    }
+    setTaskSegmentTranslations(taskId, translationConfigSignature, translations)
+    for (const issue of outcome.issues) stageIssues.push(issue)
   }
 
-  setTaskTranslationIssues(taskId, [])
+  const missingSegmentIds = segments
+    .filter((segment) => typeof translations.get(segment.id) !== 'string')
+    .map((segment) => segment.id)
+  if (missingSegmentIds.length > 0) {
+    throw new Error(`字幕翻译结果缺失：segment ${missingSegmentIds.join(', ')}`)
+  }
+
+  setTaskTranslationIssues(taskId, stageIssues)
   checkCancelled(taskId)
   await checkPaused(taskId)
   checkCancelled(taskId)

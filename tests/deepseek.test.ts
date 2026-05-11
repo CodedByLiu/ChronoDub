@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  TranslationIncompleteError,
   compressTranslation,
   translateSegments,
 } from '../src/main/services/deepseek'
@@ -79,13 +78,14 @@ test('translateSegments includes max_chars when budget map is provided', async (
   }) as typeof fetch
 
   try {
-    const result = await translateSegments(
+    const outcome = await translateSegments(
       [{ id: 0, text: 'Open settings.' }],
       'test-key',
       [],
       new Map([[0, 8]])
     )
-    assert.equal(result.get(0), '\u6253\u5f00\u8bbe\u7f6e\u3002')
+    assert.equal(outcome.translations.get(0), '\u6253\u5f00\u8bbe\u7f6e\u3002')
+    assert.equal(outcome.issues.length, 0)
     assert.equal(inspected, true)
   } finally {
     globalThis.fetch = originalFetch
@@ -119,9 +119,10 @@ test('translateSegments recovers missing ids with single-item retry', async () =
   }) as typeof fetch
 
   try {
-    const result = await translateSegments(sourceItems, 'test-key', [])
-    assert.equal(result.get(0), zhLine0)
-    assert.equal(result.get(1), zhLine1)
+    const outcome = await translateSegments(sourceItems, 'test-key', [])
+    assert.equal(outcome.translations.get(0), zhLine0)
+    assert.equal(outcome.translations.get(1), zhLine1)
+    assert.equal(outcome.issues.length, 0)
     assert.equal(batchCalls, 3)
     assert.equal(singleCalls, 1)
   } finally {
@@ -129,7 +130,7 @@ test('translateSegments recovers missing ids with single-item retry', async () =
   }
 })
 
-test('translateSegments throws when unresolved lines stay untranslated', async () => {
+test('translateSegments falls back to last raw output when retries exhaust', async () => {
   const source = 'Please keep this sentence exactly as English.'
   const originalFetch = globalThis.fetch
   let callCount = 0
@@ -141,17 +142,18 @@ test('translateSegments throws when unresolved lines stay untranslated', async (
   }) as typeof fetch
 
   try {
-    await assert.rejects(
-      () => translateSegments([{ id: 0, text: source }], 'test-key', []),
-      /translation result is incomplete/i
-    )
+    const outcome = await translateSegments([{ id: 0, text: source }], 'test-key', [])
+    assert.equal(outcome.translations.get(0), source)
+    assert.equal(outcome.issues.length, 1)
+    assert.equal(outcome.issues[0]?.id, 0)
+    assert.equal(outcome.issues[0]?.text, source)
     assert.equal(callCount, 5)
   } finally {
     globalThis.fetch = originalFetch
   }
 })
 
-test('translateSegments keeps max_chars on unresolved issue items', async () => {
+test('translateSegments keeps max_chars on issue items in fallback mode', async () => {
   const source = 'Please keep this sentence exactly as English.'
   const originalFetch = globalThis.fetch
 
@@ -161,16 +163,15 @@ test('translateSegments keeps max_chars on unresolved issue items', async () => 
   }) as typeof fetch
 
   try {
-    await assert.rejects(
-      () =>
-        translateSegments([{ id: 0, text: source }], 'test-key', [], new Map([[0, 12]])),
-      (err: unknown) => {
-        assert.ok(err instanceof TranslationIncompleteError)
-        assert.equal(err.unresolvedItems.length, 1)
-        assert.equal(err.unresolvedItems[0]?.max_chars, 12)
-        return true
-      }
+    const outcome = await translateSegments(
+      [{ id: 0, text: source }],
+      'test-key',
+      [],
+      new Map([[0, 12]])
     )
+    assert.equal(outcome.translations.get(0), source)
+    assert.equal(outcome.issues.length, 1)
+    assert.equal(outcome.issues[0]?.max_chars, 12)
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -194,8 +195,9 @@ test('translateSegments retries over-compressed sentence translations', async ()
   }) as typeof fetch
 
   try {
-    const result = await translateSegments([{ id: 0, text: source }], 'test-key', [])
-    assert.equal(result.get(0), fullSentence)
+    const outcome = await translateSegments([{ id: 0, text: source }], 'test-key', [])
+    assert.equal(outcome.translations.get(0), fullSentence)
+    assert.equal(outcome.issues.length, 0)
     assert.equal(callCount, 2)
   } finally {
     globalThis.fetch = originalFetch
@@ -215,15 +217,16 @@ test('translateSegments allows short technical tokens unchanged', async () => {
   }) as typeof fetch
 
   try {
-    const result = await translateSegments([{ id: 0, text: 'HTTP' }], 'test-key', [])
-    assert.equal(result.get(0), 'HTTP')
+    const outcome = await translateSegments([{ id: 0, text: 'HTTP' }], 'test-key', [])
+    assert.equal(outcome.translations.get(0), 'HTTP')
+    assert.equal(outcome.issues.length, 0)
     assert.equal(strictPromptCalls, 1)
   } finally {
     globalThis.fetch = originalFetch
   }
 })
 
-test('translateSegments rejects paraphrased full-English output', async () => {
+test('translateSegments flags paraphrased full-English output as issue', async () => {
   const source = 'Open settings and scroll down.'
   const englishParaphrase = 'Please continue by opening settings and scrolling down.'
   const originalFetch = globalThis.fetch
@@ -236,11 +239,58 @@ test('translateSegments rejects paraphrased full-English output', async () => {
   }) as typeof fetch
 
   try {
-    await assert.rejects(
-      () => translateSegments([{ id: 0, text: source }], 'test-key', []),
-      /translation result is incomplete/i
-    )
+    const outcome = await translateSegments([{ id: 0, text: source }], 'test-key', [])
+    assert.equal(outcome.translations.get(0), englishParaphrase)
+    assert.equal(outcome.issues.length, 1)
+    assert.equal(outcome.issues[0]?.id, 0)
     assert.equal(callCount, 5)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('translateSegments short-circuits letter-recitation source without calling DeepSeek', async () => {
+  const source = 'a  b  b  a'
+  const originalFetch = globalThis.fetch
+  let callCount = 0
+
+  globalThis.fetch = (async () => {
+    callCount += 1
+    throw new Error('fetch should not be called for untranslatable source')
+  }) as typeof fetch
+
+  try {
+    const outcome = await translateSegments([{ id: 0, text: source }], 'test-key', [])
+    assert.equal(outcome.translations.get(0), 'a b b a')
+    assert.equal(outcome.issues.length, 0)
+    assert.equal(callCount, 0)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('translateSegments accepts short Chinese when budget is tight', async () => {
+  const source = 'there is no value yet'
+  const concise = '没有值'
+  const originalFetch = globalThis.fetch
+  let callCount = 0
+
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    callCount += 1
+    const { items } = parseRequest(init)
+    return createDeepseekResponse([{ id: items[0].id, text: concise }])
+  }) as typeof fetch
+
+  try {
+    const outcome = await translateSegments(
+      [{ id: 0, text: source }],
+      'test-key',
+      [],
+      new Map([[0, 10]])
+    )
+    assert.equal(outcome.translations.get(0), concise)
+    assert.equal(outcome.issues.length, 0)
+    assert.equal(callCount, 1)
   } finally {
     globalThis.fetch = originalFetch
   }
