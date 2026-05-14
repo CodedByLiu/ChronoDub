@@ -15,9 +15,16 @@ import {
 let sleepBlockerId: number | null = null
 
 export function sendToRenderer(channel: string, ...args: unknown[]): void {
-  BrowserWindow.getAllWindows().forEach((win) => {
-    win.webContents.send(channel, ...args)
-  })
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue
+    const contents = win.webContents
+    if (!contents || contents.isDestroyed() || contents.isCrashed()) continue
+    try {
+      contents.send(channel, ...args)
+    } catch {
+      // Renderer frame can be disposed mid-send during reload/crash; drop silently.
+    }
+  }
 }
 
 export function updateSleepBlocker(): void {

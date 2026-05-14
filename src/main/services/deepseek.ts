@@ -209,7 +209,19 @@ async function translateBatch(
   const lastRawByItem = new Map<number, string>()
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    const parsed = await requestBatchTranslations(items, apiKey, dictionary, true)
+    let parsed: Map<number, string>
+    try {
+      parsed = await requestBatchTranslations(items, apiKey, dictionary, true)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.warn(`translateBatch attempt ${attempt + 1}/${MAX_RETRIES} failed: ${message}`)
+      if (attempt < MAX_RETRIES - 1) {
+        await sleep(1000 * (attempt + 1))
+        continue
+      }
+      parsed = new Map<number, string>()
+    }
+
     for (const [id, text] of parsed) {
       const candidate = normalizeSpaces(text)
       if (candidate) lastRawByItem.set(id, candidate)
