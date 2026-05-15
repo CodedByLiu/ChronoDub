@@ -38,6 +38,7 @@ export function buildSubtitleNumberDrafts(style: SubtitleStyleConfig): Record<Su
     backgroundOpacity: String(style.backgroundOpacity ?? DEFAULT_SUBTITLE_STYLE.backgroundOpacity),
     backgroundPadding: String(style.backgroundPadding ?? DEFAULT_SUBTITLE_STYLE.backgroundPadding),
     safeMargin: String(style.safeMargin ?? DEFAULT_SUBTITLE_STYLE.safeMargin),
+    softWrapMaxChars: String(style.softWrapMaxChars ?? DEFAULT_SUBTITLE_STYLE.softWrapMaxChars),
   }
 }
 

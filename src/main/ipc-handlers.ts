@@ -22,6 +22,7 @@ import {
   updateConcurrentPipelineLimit,
 } from './services/pipeline'
 import {
+  getTaskSnapshot,
   getTaskSnapshots,
   registerTasks,
   removeTaskSnapshot,
@@ -162,9 +163,11 @@ export function registerIpcHandlers(): void {
   ipcMain.on('task:replace-subtitle-path', (_event, taskId: string, subtitlePath: string) => {
     if (typeof taskId !== 'string' || !taskId.trim()) return
     if (typeof subtitlePath !== 'string' || !subtitlePath.trim()) return
+    const previous = getTaskSnapshot(taskId)
     replaceTaskSubtitlePathSnapshot(taskId, subtitlePath)
     void deleteTaskCues(taskId)
-    clearTaskTranslationState(taskId, false)
+    const outputDir = loadConfigSync().outputDir
+    clearTaskTranslationState(taskId, outputDir, previous?.videoPath)
   })
 
   ipcMain.on('task:start', (_event, taskInfos: TaskStartInfo[], config?: AppConfig) => {
@@ -208,6 +211,7 @@ export function registerIpcHandlers(): void {
     cancelAllTasks(ids)
     removeTaskSnapshots(ids)
   })
+
 
   ipcMain.on('task:save-review', (_event, taskId: string, cues: Cue[]) => {
     void saveReviewCues(taskId, cues)

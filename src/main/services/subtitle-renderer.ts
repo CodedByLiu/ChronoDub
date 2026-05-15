@@ -1,5 +1,6 @@
 import { writeFileSync } from 'fs'
 import type { Cue, SubtitlePosition, SubtitleStyleConfig } from '../../types'
+import { ASS_SOFT_WRAP_MAX_CHARS } from './audio-constants'
 
 const DEFAULT_PLAY_RES_X = 1920
 const DEFAULT_PLAY_RES_Y = 1080
@@ -39,8 +40,34 @@ function assTime(us: number): string {
   return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(centiseconds).padStart(2, '0')}`
 }
 
-function escapeAssText(text: string): string {
-  return text
+const SOFT_WRAP_SPLIT_RE = /[，、；：,;:\s]/g
+
+export function softWrapForAss(text: string, maxLineChars: number): string {
+  if (maxLineChars <= 0 || text.length <= maxLineChars) return text
+
+  const mid = Math.floor(text.length / 2)
+  const candidates: number[] = []
+  let m: RegExpExecArray | null
+  SOFT_WRAP_SPLIT_RE.lastIndex = 0
+  while ((m = SOFT_WRAP_SPLIT_RE.exec(text)) !== null) {
+    candidates.push(m.index + 1)
+  }
+
+  const splitAt =
+    candidates.length > 0
+      ? candidates.reduce((best, idx) =>
+          Math.abs(idx - mid) < Math.abs(best - mid) ? idx : best
+        )
+      : mid
+  const left = text.slice(0, splitAt).trimEnd()
+  const right = text.slice(splitAt).trimStart()
+  if (!left || !right) return text
+  return `${left}\n${right}`
+}
+
+function escapeAssText(text: string, softWrapChars: number): string {
+  const wrapped = softWrapChars > 0 ? softWrapForAss(text, softWrapChars) : text
+  return wrapped
     .replace(/\\/g, '\\\\')
     .replace(/\r?\n/g, '\\N')
     .replace(/\{/g, '\\{')
@@ -180,12 +207,15 @@ ${styles.map(renderStyleLine).join('\n')}
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
 
+  const softWrapChars = style.softWrapEnabled
+    ? Math.max(0, Math.floor(style.softWrapMaxChars ?? ASS_SOFT_WRAP_MAX_CHARS))
+    : 0
   const dialogues: string[] = []
   for (const cue of cues) {
     if (cue.endUs <= cue.startUs || !cue.text.trim()) continue
     const start = assTime(cue.startUs)
     const end = assTime(cue.endUs)
-    const text = escapeAssText(cue.text)
+    const text = escapeAssText(cue.text, softWrapChars)
 
     if (style.backgroundEnabled) {
       dialogues.push(`Dialogue: 0,${start},${end},Bg,,0,0,0,,${text}`)

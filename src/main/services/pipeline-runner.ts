@@ -25,7 +25,7 @@ export async function runPipeline(
   try {
     const configError = validateTaskConfig(config)
     if (configError) throw new Error(configError)
-    await hydrateTaskTranslationCache(taskId)
+    hydrateTaskTranslationCache(taskId, config.outputDir, videoPath)
 
     const translation = await runTranslationStage({
       taskId,
@@ -37,6 +37,7 @@ export async function runPipeline(
 
     const synthesis = await runSynthesisStage({
       taskId,
+      videoPath,
       config,
       translation,
     })
@@ -49,6 +50,7 @@ export async function runPipeline(
       probeResult: translation.probeResult,
       englishCues: translation.englishCues,
       finalizedCues: synthesis.finalizedCues,
+      segments: translation.segments,
       assemblerSegments: synthesis.assemblerSegments,
     })
   } catch (err: any) {

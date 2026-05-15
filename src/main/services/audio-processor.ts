@@ -1,6 +1,12 @@
 export { SR, SAFETY_GAP_US } from './audio-constants'
 
-export { buildSegments, buildTimeWindows } from './audio-segmentation'
+export {
+  buildSegments,
+  buildSegmentsFromGroups,
+  buildTimeWindows,
+  groupCuesByGap,
+  joinGroupTextForTranslation,
+} from './audio-segmentation'
 
 export { calibrateCPS, computeBudget, assignBudgets, resetCpsCache } from './audio-cps'
 

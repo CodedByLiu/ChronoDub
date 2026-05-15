@@ -236,6 +236,8 @@ export function ConfigPanel() {
             reviewMode={config.reviewMode}
             autoReviewCountdown={config.autoReviewCountdown}
             createVideoSubfolder={config.createVideoSubfolder}
+            useLLMSentenceGrouping={config.useLLMSentenceGrouping}
+            hasDeepseekKey={config.deepseekKey.trim().length > 0}
             onChangeConcurrent={(value) => setConfig({ maxConcurrentTasks: value as ConcurrencyOption })}
             onChangeReviewMode={(value) => setConfig({ reviewMode: value as ReviewMode })}
             onChangeAutoReviewCountdown={(value) =>
@@ -244,6 +246,7 @@ export function ConfigPanel() {
               })
             }
             onChangeCreateVideoSubfolder={(value) => setConfig({ createVideoSubfolder: value })}
+            onChangeUseLLMSentenceGrouping={(value) => setConfig({ useLLMSentenceGrouping: value })}
           />
         </div>
       </ScrollArea>

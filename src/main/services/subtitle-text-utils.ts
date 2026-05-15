@@ -1,4 +1,5 @@
-import type { Cue } from '../../types'
+import type { Cue, MicrosecondTimestamp, Segment } from '../../types'
+import { SUBTITLE_MAX_CHARS_PER_CUE, SUBTITLE_SOFT_SPLIT_TARGET } from './audio-constants'
 
 const ASCII_WORD_CHAR_RE = /[A-Za-z0-9_./#+-]/
 const PREFERRED_SPLIT_AFTER_RE = /[\s,.;:!?\uFF0C\u3002\uFF1B\uFF1A\uFF01\uFF1F\u3001\uFF09)\]}]/
@@ -79,6 +80,156 @@ export function splitSegmentTextAcrossCues(text: string, cues: Cue[]): string[] 
   pieces.push(normalized.slice(start).trim())
 
   return pieces
+}
+
+const SPEAKABLE_CHAR_RE = /[\p{L}\p{N}]/u
+
+export function hasSpeakableContent(text: string): boolean {
+  return SPEAKABLE_CHAR_RE.test(text)
+}
+
+const SENTENCE_TERMINATOR_RE = /([。！？!?…]+)/g
+const SOFT_SPLIT_PUNCT_RE = /[，、；：,;:]/g
+
+export function partitionChineseBySentence(
+  text: string,
+  maxChars: number = SUBTITLE_MAX_CHARS_PER_CUE,
+  softTarget: number = SUBTITLE_SOFT_SPLIT_TARGET
+): string[] {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized) return []
+
+  const sentences: string[] = []
+  let cursor = 0
+  SENTENCE_TERMINATOR_RE.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = SENTENCE_TERMINATOR_RE.exec(normalized)) !== null) {
+    const end = match.index + match[0].length
+    const piece = normalized.slice(cursor, end).trim()
+    if (piece) sentences.push(piece)
+    cursor = end
+  }
+  if (cursor < normalized.length) {
+    const tail = normalized.slice(cursor).trim()
+    if (tail) sentences.push(tail)
+  }
+
+  const result: string[] = []
+  for (const sentence of sentences) {
+    if (sentence.length <= maxChars) {
+      result.push(sentence)
+    } else {
+      result.push(...softSplitLongSentence(sentence, maxChars, softTarget))
+    }
+  }
+  return result
+}
+
+function softSplitLongSentence(
+  sentence: string,
+  maxChars: number,
+  softTarget: number
+): string[] {
+  if (sentence.length <= maxChars) return [sentence]
+
+  const punctIndices: number[] = []
+  let m: RegExpExecArray | null
+  SOFT_SPLIT_PUNCT_RE.lastIndex = 0
+  while ((m = SOFT_SPLIT_PUNCT_RE.exec(sentence)) !== null) {
+    punctIndices.push(m.index + 1)
+  }
+
+  if (punctIndices.length > 0) {
+    const mid = Math.floor(sentence.length / 2)
+    const cutAt = punctIndices.reduce((best, idx) =>
+      Math.abs(idx - mid) < Math.abs(best - mid) ? idx : best
+    )
+    const left = sentence.slice(0, cutAt).trim()
+    const right = sentence.slice(cutAt).trim()
+    const pieces: string[] = []
+    pieces.push(...softSplitLongSentence(left, maxChars, softTarget))
+    pieces.push(...softSplitLongSentence(right, maxChars, softTarget))
+    return pieces
+  }
+
+  const pieces: string[] = []
+  for (let i = 0; i < sentence.length; i += softTarget) {
+    pieces.push(sentence.slice(i, i + softTarget))
+  }
+  return pieces
+}
+
+export function allocateProportionalTimings(
+  parts: string[],
+  startUs: number,
+  endUs: number
+): Array<{ startUs: number; endUs: number }> {
+  if (parts.length === 0) return []
+  if (parts.length === 1) return [{ startUs, endUs }]
+
+  const safeEnd = Math.max(endUs, startUs + parts.length)
+  const totalSpan = safeEnd - startUs
+  const weights = parts.map((p) => Math.max(1, p.length))
+  const totalWeight = weights.reduce((s, w) => s + w, 0)
+
+  const timings: Array<{ startUs: number; endUs: number }> = []
+  let cumulative = 0
+  let prevEnd = startUs
+  for (let i = 0; i < parts.length; i++) {
+    cumulative += weights[i]
+    const isLast = i === parts.length - 1
+    const cueEnd = isLast ? safeEnd : startUs + Math.round((totalSpan * cumulative) / totalWeight)
+    const cueStart = prevEnd
+    const clampedEnd = Math.max(cueStart + 1, cueEnd)
+    timings.push({ startUs: cueStart, endUs: clampedEnd })
+    prevEnd = clampedEnd
+  }
+  return timings
+}
+
+export function repartitionCuesPerSegment(
+  finalizedCues: Cue[],
+  segments: Segment[],
+  startIdHint?: number
+): Cue[] {
+  if (finalizedCues.length === 0 || segments.length === 0) return finalizedCues
+
+  const cueMap = new Map<number, Cue>(finalizedCues.map((c) => [c.id, c]))
+  const claimed = new Set<number>()
+  const output: Cue[] = []
+  let nextId =
+    startIdHint ?? finalizedCues.reduce((max, c) => (c.id > max ? c.id : max), 0) + 1
+
+  for (const segment of segments) {
+    const segCues = segment.cueIds
+      .map((id) => cueMap.get(id))
+      .filter((c): c is Cue => !!c)
+    if (segCues.length === 0) continue
+    segCues.forEach((c) => claimed.add(c.id))
+
+    const segStart = segCues[0].startUs
+    const segEnd = segCues[segCues.length - 1].endUs
+    const joined = joinCueTextsForSpeech(segCues.map((c) => c.text))
+    const parts = partitionChineseBySentence(joined)
+
+    if (parts.length === 0) continue
+    const timings = allocateProportionalTimings(parts, segStart, segEnd)
+    for (let i = 0; i < parts.length; i++) {
+      output.push({
+        id: nextId++,
+        text: parts[i],
+        startUs: timings[i].startUs as MicrosecondTimestamp,
+        endUs: timings[i].endUs as MicrosecondTimestamp,
+      })
+    }
+  }
+
+  for (const cue of finalizedCues) {
+    if (!claimed.has(cue.id)) output.push(cue)
+  }
+
+  output.sort((a, b) => a.startUs - b.startUs || a.id - b.id)
+  return output
 }
 
 export function joinCueTextsForSpeech(parts: string[]): string {

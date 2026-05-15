@@ -1,4 +1,4 @@
-import type { AppConfig, Cue } from '../../types'
+import type { AppConfig, Cue, Segment } from '../../types'
 import { parseSubtitleFile } from './subtitle-parser'
 import {
   applyTerminologyToChinese,
@@ -9,6 +9,7 @@ import { ffprobe } from './ffmpeg'
 import {
   assignBudgets,
   buildSegments,
+  buildSegmentsFromGroups,
   buildTimeWindows,
   calibrateCPS,
   classifySegmentRisk,
@@ -27,11 +28,20 @@ import {
   setTaskTranslationIssues,
 } from './pipeline-translation-cache'
 import { reviewCheckpoint } from './pipeline-review'
+import {
+  computeGroupingSignature,
+  groupSentencesWithLLM,
+} from './sentence-grouper'
+import {
+  loadSentenceGroupCache,
+  resolveCacheDir,
+  saveSentenceGroupCache,
+} from './segment-cache'
 import type { TranslationStageResult, PipelineStageContext } from './pipeline-stage-types'
 
 function mapTranslatedCues(
   englishCues: Cue[],
-  segments: ReturnType<typeof buildSegments>,
+  segments: Segment[],
   translations: Map<number, string>,
   config: AppConfig
 ): Cue[] {
@@ -68,7 +78,7 @@ function mapTranslatedCues(
 }
 
 function buildBudgetMaps(
-  segments: ReturnType<typeof buildSegments>,
+  segments: Segment[],
   windows: ReturnType<typeof buildTimeWindows>
 ): {
   segmentRiskMap: Map<number, SegmentRisk>
@@ -100,7 +110,33 @@ export async function runTranslationStage(context: PipelineStageContext): Promis
   checkCancelled(taskId)
 
   reportProgress(taskId, 'parsing', 10)
-  const segments = buildSegments(englishCues)
+  const cacheDir = resolveCacheDir(config.outputDir, videoPath)
+  let groupingSignature: string | undefined
+  let segments: Segment[]
+  if (config.useLLMSentenceGrouping && config.deepseekKey.trim().length > 0) {
+    groupingSignature = computeGroupingSignature(englishCues)
+    const cachedGroups = cacheDir
+      ? loadSentenceGroupCache(cacheDir, taskId, groupingSignature)
+      : null
+    const { groups, usedFallback } = await groupSentencesWithLLM(englishCues, {
+      apiKey: config.deepseekKey,
+      cachedGroups,
+      betweenChunks: async () => {
+        await checkPaused(taskId)
+        checkCancelled(taskId)
+      },
+    })
+    segments = buildSegmentsFromGroups(englishCues, groups)
+    if (cacheDir && !usedFallback && !cachedGroups) {
+      try {
+        saveSentenceGroupCache(cacheDir, taskId, groupingSignature, groups)
+      } catch (err) {
+        console.error(`Failed to persist sentence-group cache [${taskId}]:`, err)
+      }
+    }
+  } else {
+    segments = buildSegments(englishCues)
+  }
   checkCancelled(taskId)
   await checkPaused(taskId)
   checkCancelled(taskId)
@@ -123,7 +159,7 @@ export async function runTranslationStage(context: PipelineStageContext): Promis
   const { segmentRiskMap, segmentBudgetMap } = buildBudgetMaps(segments, windows)
 
   reportProgress(taskId, 'translating', 20)
-  const translationConfigSignature = buildTranslationConfigSignature(config)
+  const translationConfigSignature = buildTranslationConfigSignature(config, groupingSignature)
   const translations = getTaskSegmentTranslations(taskId, translationConfigSignature)
   const pendingSegments = segments.filter((segment) => {
     const cached = translations.get(segment.id)
@@ -158,7 +194,13 @@ export async function runTranslationStage(context: PipelineStageContext): Promis
     for (const [id, text] of outcome.translations) {
       translations.set(id, text)
     }
-    setTaskSegmentTranslations(taskId, translationConfigSignature, translations)
+    setTaskSegmentTranslations(
+      taskId,
+      translationConfigSignature,
+      translations,
+      config.outputDir,
+      videoPath
+    )
     for (const issue of outcome.issues) stageIssues.push(issue)
   }
 

@@ -277,6 +277,38 @@ export function SubtitleOutputSection({
               />
               <p className="text-xs text-muted-foreground">控制字幕距离顶部或底部安全区的边距，单位为像素。</p>
             </div>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border bg-background/40 px-3 py-2">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                checked={style.softWrapEnabled}
+                onChange={(event) => onSetStyle({ softWrapEnabled: event.target.checked })}
+              />
+              <div className="space-y-1">
+                <div className="text-sm">自动换行</div>
+                <p className="text-xs text-muted-foreground">
+                  超过指定字符数时，自动在标点或空格处折成两行，避免长句撑出屏幕。
+                </p>
+              </div>
+            </label>
+
+            {style.softWrapEnabled && (
+              <div className="space-y-2">
+                <Label>换行字符数阈值</Label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={subtitleNumberDrafts.softWrapMaxChars}
+                  onChange={(event) => onDraftChange('softWrapMaxChars', event.target.value)}
+                  onBlur={() => onDraftCommit('softWrapMaxChars')}
+                  onKeyDown={(event) => event.key === 'Enter' && onDraftCommit('softWrapMaxChars')}
+                />
+                <p className="text-xs text-muted-foreground">
+                  中文一般 16-20 字最舒服。单条字幕超过这个长度会自动折两行。
+                </p>
+              </div>
+            )}
           </div>
 
           <Separator />

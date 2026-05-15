@@ -12,10 +12,13 @@ interface RuntimeSectionsProps {
   reviewMode: ReviewMode
   autoReviewCountdown: number
   createVideoSubfolder: boolean
+  useLLMSentenceGrouping: boolean
+  hasDeepseekKey: boolean
   onChangeConcurrent: (value: ConcurrencyOption) => void
   onChangeReviewMode: (value: ReviewMode) => void
   onChangeAutoReviewCountdown: (value: number) => void
   onChangeCreateVideoSubfolder: (value: boolean) => void
+  onChangeUseLLMSentenceGrouping: (value: boolean) => void
 }
 
 export function RuntimeSections({
@@ -23,10 +26,13 @@ export function RuntimeSections({
   reviewMode,
   autoReviewCountdown,
   createVideoSubfolder,
+  useLLMSentenceGrouping,
+  hasDeepseekKey,
   onChangeConcurrent,
   onChangeReviewMode,
   onChangeAutoReviewCountdown,
   onChangeCreateVideoSubfolder,
+  onChangeUseLLMSentenceGrouping,
 }: RuntimeSectionsProps) {
   return (
     <>
@@ -96,6 +102,33 @@ export function RuntimeSections({
             <div className="text-sm">为每个视频单独创建文件夹</div>
             <p className="text-xs text-muted-foreground">
               开启后，视频和字幕放进各自子文件夹；关闭后，所有输出直接放在所选输出目录下。
+            </p>
+          </div>
+        </label>
+      </div>
+
+      <Separator />
+
+      <div className="space-y-3">
+        <Label>合成质量优化</Label>
+        <label
+          className={`flex items-start gap-3 rounded-md border border-border bg-background/40 px-3 py-2 ${
+            hasDeepseekKey ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+          }`}
+        >
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+            checked={useLLMSentenceGrouping && hasDeepseekKey}
+            disabled={!hasDeepseekKey}
+            onChange={(event) => onChangeUseLLMSentenceGrouping(event.target.checked)}
+          />
+          <div className="space-y-1">
+            <div className="text-sm">使用 DeepSeek 智能分句（推荐）</div>
+            <p className="text-xs text-muted-foreground">
+              {hasDeepseekKey
+                ? '翻译前先用 DeepSeek 判断哪些相邻字幕属于同一句话再合并，可消除中文配音的句中停顿。每个视频会多几次 API 调用（结果会缓存）。'
+                : '需先在上方配置 DeepSeek API Key 才能启用。'}
             </p>
           </div>
         </label>

@@ -2,8 +2,18 @@ export const SR = 48000
 export const SAFETY_GAP_US = 50_000
 
 export const MERGE_GAP_US = 200_000
-export const MAX_SEGMENT_DURATION_US = 7_000_000
+export const MAX_SEGMENT_DURATION_US = 30_000_000
+export const MAX_SEGMENT_TEXT_CHARS = 320
 export const STRONG_TERMINALS = /[.?!…。？；]+$/
+
+export const SENTENCE_GROUP_CHUNK_SIZE = 40
+export const SENTENCE_GROUP_OVERLAP = 4
+export const SENTENCE_GROUPING_VERSION = '2026-05-15-v1'
+export const DEEPSEEK_GROUPING_TIMEOUT_MS = 30_000
+
+export const SUBTITLE_MAX_CHARS_PER_CUE = 40
+export const SUBTITLE_SOFT_SPLIT_TARGET = 30
+export const ASS_SOFT_WRAP_MAX_CHARS = 20
 
 export const MARGIN_SEC = 0.15
 export const CPS_SAFETY_FACTOR = 0.9

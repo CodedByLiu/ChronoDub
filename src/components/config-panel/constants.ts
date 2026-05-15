@@ -46,6 +46,7 @@ export type SubtitleNumberField =
   | 'backgroundOpacity'
   | 'backgroundPadding'
   | 'safeMargin'
+  | 'softWrapMaxChars'
 
 export const SUBTITLE_NUMBER_LIMITS: Record<SubtitleNumberField, { min: number; max: number }> = {
   fontSize: { min: 20, max: 120 },
@@ -53,4 +54,5 @@ export const SUBTITLE_NUMBER_LIMITS: Record<SubtitleNumberField, { min: number; 
   backgroundOpacity: { min: 0, max: 100 },
   backgroundPadding: { min: 0, max: 24 },
   safeMargin: { min: 24, max: 240 },
+  softWrapMaxChars: { min: 6, max: 60 },
 }

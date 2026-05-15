@@ -7,19 +7,11 @@ import {
   cloneCue,
   cloneTaskCueSnapshot,
   cuesFromTaskCueSnapshot,
-  deserializeTaskTranslationCache,
   hasTaskCueContent,
   parseTaskCueFile,
-  serializeTaskTranslationCache,
   toTaskCueFileV2,
-  type SerializedTranslationCache,
   type TaskCueSnapshot,
 } from './task-cue-codec'
-
-export interface TaskTranslationCache {
-  configSignature: string
-  segmentTranslations: Map<number, string>
-}
 
 const cueCache = new Map<string, TaskCueSnapshot | null>()
 const cueWriteChains = new Map<string, Promise<void>>()
@@ -54,7 +46,6 @@ async function loadTaskCueSnapshot(taskId: string): Promise<TaskCueSnapshot | nu
 interface TaskCueSaveUpdate {
   englishCues?: Cue[]
   chineseCues?: Cue[]
-  translationCache?: SerializedTranslationCache | null
 }
 
 async function persistTaskCueSnapshot(taskId: string, data: TaskCueSaveUpdate): Promise<void> {
@@ -71,14 +62,8 @@ async function persistTaskCueSnapshot(taskId: string, data: TaskCueSaveUpdate): 
         const merged: TaskCueSnapshot = {
           ...(current?.englishCues ? { englishCues: current.englishCues.map(cloneCue) } : {}),
           ...(current?.chineseCues ? { chineseCues: current.chineseCues.map(cloneCue) } : {}),
-          ...(current?.translationCache ? { translationCache: current.translationCache } : {}),
           ...(data.englishCues !== undefined ? { englishCues: data.englishCues.map(cloneCue) } : {}),
           ...(data.chineseCues !== undefined ? { chineseCues: data.chineseCues.map(cloneCue) } : {}),
-          ...(data.translationCache !== undefined
-            ? data.translationCache === null
-              ? { translationCache: undefined }
-              : { translationCache: data.translationCache }
-            : {}),
         }
 
         if (!hasTaskCueContent(merged)) {
@@ -112,25 +97,6 @@ export async function saveTaskCues(
   data: { englishCues?: Cue[]; chineseCues?: Cue[] }
 ): Promise<void> {
   await persistTaskCueSnapshot(taskId, data)
-}
-
-export async function loadTaskTranslationCache(taskId: string): Promise<TaskTranslationCache | null> {
-  const loaded = await loadTaskCueSnapshot(taskId)
-  return deserializeTaskTranslationCache(loaded?.translationCache)
-}
-
-export async function saveTaskTranslationCache(
-  taskId: string,
-  cache: TaskTranslationCache | null
-): Promise<void> {
-  if (!cache) {
-    await persistTaskCueSnapshot(taskId, { translationCache: null })
-    return
-  }
-
-  await persistTaskCueSnapshot(taskId, {
-    translationCache: serializeTaskTranslationCache(cache),
-  })
 }
 
 export async function deleteTaskCues(taskId: string): Promise<void> {

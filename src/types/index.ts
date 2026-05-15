@@ -35,6 +35,8 @@ export interface SubtitleStyleConfig {
   backgroundPadding: number
   position: SubtitlePosition
   safeMargin: number
+  softWrapEnabled: boolean
+  softWrapMaxChars: number
 }
 
 export interface Cue {
@@ -90,6 +92,11 @@ export interface AppConfig {
   reviewMode: ReviewMode
   autoReviewCountdown: number
   maxConcurrentTasks: ConcurrencyOption
+  useLLMSentenceGrouping: boolean
+}
+
+export interface SentenceGroup {
+  cueIds: number[]
 }
 
 export const DEFAULT_SUBTITLE_STYLE: SubtitleStyleConfig = {
@@ -107,6 +114,8 @@ export const DEFAULT_SUBTITLE_STYLE: SubtitleStyleConfig = {
   backgroundPadding: 6,
   position: 'bottom-safe',
   safeMargin: 72,
+  softWrapEnabled: true,
+  softWrapMaxChars: 20,
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -120,6 +129,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   reviewMode: 'auto',
   autoReviewCountdown: 30,
   maxConcurrentTasks: 2,
+  useLLMSentenceGrouping: true,
 }
 
 export const TASK_STATUS_META: Record<TaskStatus, { label: string; color: string }> = {

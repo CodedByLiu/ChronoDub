@@ -1,9 +1,13 @@
 import type { AppConfig, TaskStatus } from '../../types'
+import { getRuntimeConfig } from '../runtime-config-store'
 import { deleteTaskCues } from '../task-cue-store'
 import { getTaskSnapshot } from '../task-registry'
 import { clearReviewCountdown } from './review-session'
 import { reportProgress, reportTaskError, updateSleepBlocker } from './pipeline-progress'
-import { clearTaskTranslationRuntime } from './pipeline-translation-cache'
+import {
+  clearTaskSegmentCacheOnDisk,
+  clearTaskTranslationRuntime,
+} from './pipeline-translation-cache'
 import { activeTasks, lastWorkStatus, type TaskState } from './pipeline-store'
 import {
   enqueuePausedTaskForResume,
@@ -46,12 +50,22 @@ export function getTaskState(taskId: string): TaskState {
   return state
 }
 
+function clearTaskSegmentCacheFromRegistry(taskId: string): void {
+  const snapshot = getTaskSnapshot(taskId)
+  const videoPath = snapshot?.videoPath
+  if (!videoPath) return
+  const outputDir = getRuntimeConfig().outputDir
+  if (!outputDir) return
+  clearTaskSegmentCacheOnDisk(outputDir, videoPath)
+}
+
 export function cleanupTask(taskId: string): void {
   const state = activeTasks.get(taskId)
   if (state) clearReviewCountdown(state)
   if (state?.cancelled) {
     void deleteTaskCues(taskId)
-    clearTaskTranslationRuntime(taskId, false)
+    clearTaskTranslationRuntime(taskId)
+    clearTaskSegmentCacheFromRegistry(taskId)
   }
   activeTasks.delete(taskId)
   removeQueuedResumeTask(taskId)
@@ -179,7 +193,8 @@ export function resumeTask(taskId: string, config?: AppConfig): void {
 export function cancelTask(taskId: string): void {
   if (removeQueuedTask(taskId)) {
     void deleteTaskCues(taskId)
-    clearTaskTranslationRuntime(taskId, false)
+    clearTaskTranslationRuntime(taskId)
+    clearTaskSegmentCacheFromRegistry(taskId)
     return
   }
   removeQueuedResumeTask(taskId)
@@ -187,7 +202,8 @@ export function cancelTask(taskId: string): void {
   const state = activeTasks.get(taskId)
   if (!state) {
     void deleteTaskCues(taskId)
-    clearTaskTranslationRuntime(taskId, false)
+    clearTaskTranslationRuntime(taskId)
+    clearTaskSegmentCacheFromRegistry(taskId)
     return
   }
 

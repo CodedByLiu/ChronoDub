@@ -1,15 +1,17 @@
 import { mkdirSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import type { AppConfig, Cue } from '../../types'
+import type { AppConfig, Cue, Segment } from '../../types'
 import { assembleToWav, type AssemblerSegment } from './audio-processor'
 import { burnSubtitlesIntoVideo, muxVideoWithAudio, type ProbeResult } from './ffmpeg'
 import { reserveOutputTarget } from './output-path'
 import { checkCancelled, checkPaused } from './pipeline-control'
 import { reportProgress, sendToRenderer } from './pipeline-progress'
 import { clearTaskTranslationRuntime } from './pipeline-translation-cache'
+import { clearSegmentCacheByPath } from './segment-cache'
 import { saveAssSubtitleFile } from './subtitle-renderer'
 import { saveSubtitleFile } from './subtitle-parser'
+import { repartitionCuesPerSegment } from './subtitle-text-utils'
 import { saveTaskCues } from '../task-cue-store'
 
 interface OutputStageContext {
@@ -19,6 +21,7 @@ interface OutputStageContext {
   probeResult: ProbeResult
   englishCues: Cue[]
   finalizedCues: Cue[]
+  segments: Segment[]
   assemblerSegments: AssemblerSegment[]
 }
 
@@ -32,7 +35,8 @@ function isTaskCancelled(taskId: string): boolean {
 }
 
 export async function runOutputStage(context: OutputStageContext): Promise<void> {
-  const { taskId, videoPath, config, probeResult, englishCues, finalizedCues, assemblerSegments } = context
+  const { taskId, videoPath, config, probeResult, englishCues, finalizedCues, segments, assemblerSegments } = context
+  const displayCues = repartitionCuesPerSegment(finalizedCues, segments)
 
   let tempDir: string | undefined
   let reservedOutput: ReturnType<typeof reserveOutputTarget> | undefined
@@ -87,7 +91,7 @@ export async function runOutputStage(context: OutputStageContext): Promise<void>
 
     if (config.subtitleOutputMode === 'burned') {
       const assPath = join(tempDir, 'burned.ass')
-      saveAssSubtitleFile(assPath, finalizedCues, config.subtitleStyle, {
+      saveAssSubtitleFile(assPath, displayCues, config.subtitleStyle, {
         width: probeResult.displayWidth ?? probeResult.videoWidth ?? 1920,
         height: probeResult.displayHeight ?? probeResult.videoHeight ?? 1080,
       })
@@ -104,11 +108,12 @@ export async function runOutputStage(context: OutputStageContext): Promise<void>
 
     reportProgress(taskId, 'encoding', 95, '正在写出字幕和结果文件')
     if (config.subtitleOutputMode === 'external' && reservedOutput.outputSubtitlePath) {
-      saveSubtitleFile(reservedOutput.outputSubtitlePath, finalizedCues)
+      saveSubtitleFile(reservedOutput.outputSubtitlePath, displayCues)
     }
     await saveTaskCues(taskId, { englishCues, chineseCues: finalizedCues })
     sendToRenderer('task:cues-updated', taskId, englishCues, finalizedCues)
     clearTaskTranslationRuntime(taskId)
+    void clearSegmentCacheByPath(config.outputDir, videoPath)
 
     reportProgress(taskId, 'completed', 100, '处理完成')
     stageCompleted = true
