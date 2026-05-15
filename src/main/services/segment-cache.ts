@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { rm } from 'fs/promises'
 import { basename, extname, join } from 'path'
 import type { SentenceGroup } from '../../types'
-import type { AudioBoundary, ProcessedAudio } from './audio-processing'
+import type { AudioBoundary, ProcessedAudio } from './audio'
 
 export const SEGMENT_CACHE_VERSION = 1
 

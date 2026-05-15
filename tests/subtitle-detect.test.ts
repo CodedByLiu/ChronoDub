@@ -3,7 +3,7 @@ import test from 'node:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { detectSubtitleForVideo } from '../src/main/services/subtitle-detect'
+import { detectSubtitleForVideo } from '../src/main/services/subtitle'
 
 async function withTempDir(run: (dir: string) => Promise<void> | void): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), 'chronodub-detect-'))

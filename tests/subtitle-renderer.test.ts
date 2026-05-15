@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { renderAssSubtitles } from '../src/main/services/subtitle-renderer'
+import { renderAssSubtitles } from '../src/main/services/subtitle'
 import type { Cue, SubtitleStyleConfig } from '../src/types'
 
 const baseStyle: SubtitleStyleConfig = {

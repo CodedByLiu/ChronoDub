@@ -12,7 +12,7 @@ import {
   buildSegmentsFromGroups,
   groupCuesByGap,
   joinGroupTextForTranslation,
-} from '../src/main/services/audio-segmentation'
+} from '../src/main/services/audio'
 
 function cue(id: number, startMs: number, endMs: number, text: string): Cue {
   return {

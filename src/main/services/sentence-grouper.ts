@@ -5,9 +5,9 @@ import {
   SENTENCE_GROUP_CHUNK_SIZE,
   SENTENCE_GROUP_OVERLAP,
   SENTENCE_GROUPING_VERSION,
-} from './audio-constants'
-import { requestLLMJson, type ChatMessage } from './llm-client'
-import { groupCuesByGap } from './audio-segmentation'
+} from './audio'
+import { requestLLMJson, type ChatMessage } from './llm'
+import { groupCuesByGap } from './audio'
 
 export type RequestJsonFn = <T>(
   llm: LLMConfig,

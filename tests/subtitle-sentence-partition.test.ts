@@ -5,7 +5,7 @@ import {
   allocateProportionalTimings,
   partitionChineseBySentence,
   repartitionCuesPerSegment,
-} from '../src/main/services/subtitle-text-utils'
+} from '../src/main/services/subtitle'
 
 function cue(id: number, startMs: number, endMs: number, text: string): Cue {
   return {

@@ -3,13 +3,13 @@ import {
   LLM_TRANSLATE_TIMEOUT_MS,
   requestLLMJson,
   testLLMPing,
-} from './llm-client'
+} from './llm'
 import {
   isAcceptableTranslatedText,
   normalizeSpaces,
 } from './text-guard'
 import { applyTerminologyToChinese } from './terminology'
-import { compressTranslation } from './llm-compress'
+import { compressTranslation } from './llm'
 
 const BATCH_SIZE = 15
 const MAX_RETRIES = 3

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { ProcessedAudio } from '../src/main/services/audio-processor'
-import { SR, clipProcessedAudioToWindow } from '../src/main/services/audio-processor'
+import type { ProcessedAudio } from '../src/main/services/audio'
+import { SR, clipProcessedAudioToWindow } from '../src/main/services/audio'
 
 test('clipProcessedAudioToWindow truncates the final boundary text when audio is hard-clipped', () => {
   const audio: ProcessedAudio = {

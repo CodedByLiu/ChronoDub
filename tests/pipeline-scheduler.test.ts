@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { DEFAULT_CONFIG, type AppConfig } from '../src/types'
 import { setRuntimeConfig } from '../src/main/runtime-config-store'
-import { resolveQueuedTaskConfig } from '../src/main/services/pipeline-scheduler'
+import { resolveQueuedTaskConfig } from '../src/main/services/pipeline/pipeline-scheduler'
 
 function cloneConfig(config: AppConfig): AppConfig {
   return {
