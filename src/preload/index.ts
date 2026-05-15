@@ -9,8 +9,8 @@ const api: IpcApi = {
     load: () => ipcRenderer.invoke('config:load'),
     save: (config) => ipcRenderer.invoke('config:save', config),
   },
-  deepseek: {
-    testKey: (apiKey) => ipcRenderer.invoke('deepseek:test-key', apiKey),
+  llm: {
+    test: (llm) => ipcRenderer.invoke('llm:test', llm),
   },
   dialog: {
     openVideos: () => ipcRenderer.invoke('dialog:open-videos'),

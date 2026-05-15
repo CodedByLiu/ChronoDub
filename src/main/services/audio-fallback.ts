@@ -1,5 +1,5 @@
-import type { MicrosecondTimestamp } from '../../types'
-import { compressTranslation } from './deepseek'
+import type { LLMConfig, MicrosecondTimestamp } from '../../types'
+import { compressTranslation } from './translator'
 import {
   clipProcessedAudioToWindow,
   synthesizeProcessedText,
@@ -16,7 +16,7 @@ export interface FallbackContext {
   text: string
   windowUs: MicrosecondTimestamp
   voice: string
-  apiKey: string
+  llm: LLMConfig
   risk: SegmentRisk
 }
 
@@ -41,7 +41,7 @@ export async function synthesizeWithFallback(ctx: FallbackContext): Promise<Proc
   let compressed = ctx.text
 
   for (let retry = 0; retry < MAX_RETRIES_PER_LEVEL; retry++) {
-    compressed = await compressTranslation(ctx.text, targetChars - retry, ctx.apiKey)
+    compressed = await compressTranslation(ctx.text, targetChars - retry, ctx.llm)
     const compressedResult = await synthesizeProcessedText(compressed, ctx.voice)
     if (compressedResult.durationUs <= ctx.windowUs) return compressedResult
     if (compressedResult.durationUs < bestResult.durationUs) {

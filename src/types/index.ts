@@ -81,8 +81,14 @@ export interface VideoTask {
   chineseCues?: Cue[]
 }
 
+export interface LLMConfig {
+  baseUrl: string
+  model: string
+  apiKey: string
+}
+
 export interface AppConfig {
-  deepseekKey: string
+  llm: LLMConfig
   dictionary: Array<{ en: string; zh: string }>
   selectedVoice: string
   outputDir: string
@@ -119,7 +125,11 @@ export const DEFAULT_SUBTITLE_STYLE: SubtitleStyleConfig = {
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
-  deepseekKey: '',
+  llm: {
+    baseUrl: 'https://api.deepseek.com/v1',
+    model: 'deepseek-chat',
+    apiKey: '',
+  },
   dictionary: [],
   selectedVoice: '',
   outputDir: '',
@@ -152,7 +162,7 @@ export interface TaskStartInfo {
   subtitlePath: string | null
 }
 
-export interface DeepseekTestResult {
+export interface LLMTestResult {
   ok: boolean
   message?: string
 }
@@ -170,8 +180,8 @@ export interface IpcApi {
     load: () => Promise<AppConfig>
     save: (config: AppConfig) => Promise<void>
   }
-  deepseek: {
-    testKey: (apiKey: string) => Promise<DeepseekTestResult>
+  llm: {
+    test: (llm: LLMConfig) => Promise<LLMTestResult>
   }
   dialog: {
     openVideos: () => Promise<string[]>

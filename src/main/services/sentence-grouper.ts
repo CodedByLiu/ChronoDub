@@ -1,16 +1,16 @@
 import { createHash } from 'crypto'
-import type { Cue, SentenceGroup } from '../../types'
+import type { Cue, LLMConfig, SentenceGroup } from '../../types'
 import {
-  DEEPSEEK_GROUPING_TIMEOUT_MS,
+  LLM_GROUPING_TIMEOUT_MS,
   SENTENCE_GROUP_CHUNK_SIZE,
   SENTENCE_GROUP_OVERLAP,
   SENTENCE_GROUPING_VERSION,
 } from './audio-constants'
-import { requestDeepseekJson, type ChatMessage } from './deepseek-client'
+import { requestLLMJson, type ChatMessage } from './llm-client'
 import { groupCuesByGap } from './audio-segmentation'
 
 export type RequestJsonFn = <T>(
-  apiKey: string,
+  llm: LLMConfig,
   messages: ChatMessage[],
   maxTokens: number,
   temperature: number,
@@ -19,7 +19,7 @@ export type RequestJsonFn = <T>(
 ) => Promise<T>
 
 export interface GroupSentencesOptions {
-  apiKey: string
+  llm: LLMConfig
   cachedGroups?: SentenceGroup[] | null
   betweenChunks?: () => void | Promise<void>
   requestJson?: RequestJsonFn
@@ -105,9 +105,9 @@ function validateChunkOutput(raw: unknown, chunk: Cue[]): SentenceGroup[] | null
   return result
 }
 
-async function callDeepseekForChunk(
+async function callLLMForChunk(
   chunk: Cue[],
-  apiKey: string,
+  llm: LLMConfig,
   requestJson: RequestJsonFn
 ): Promise<SentenceGroup[] | null> {
   const messages: ChatMessage[] = [
@@ -116,12 +116,12 @@ async function callDeepseekForChunk(
   ]
   try {
     const raw = await requestJson<LLMResponse>(
-      apiKey,
+      llm,
       messages,
       2048,
       0,
-      DEEPSEEK_GROUPING_TIMEOUT_MS,
-      `DeepSeek 分句超时（${Math.round(DEEPSEEK_GROUPING_TIMEOUT_MS / 1000)} 秒）`
+      LLM_GROUPING_TIMEOUT_MS,
+      `LLM 分句超时（${Math.round(LLM_GROUPING_TIMEOUT_MS / 1000)} 秒）`
     )
     return validateChunkOutput(raw, chunk)
   } catch (err) {
@@ -197,12 +197,12 @@ export async function groupSentencesWithLLM(
     return { groups: options.cachedGroups, usedFallback: false }
   }
 
-  const apiKey = options.apiKey?.trim()
-  if (!apiKey) {
+  const llm = options.llm
+  if (!llm?.apiKey?.trim() || !llm?.baseUrl?.trim() || !llm?.model?.trim()) {
     return { groups: groupCuesByGap(cues), usedFallback: true }
   }
 
-  const requestJson = options.requestJson ?? requestDeepseekJson
+  const requestJson = options.requestJson ?? requestLLMJson
   const chunks = buildChunks(cues)
   const chunkResults: Array<{ chunkCueIds: number[]; groups: SentenceGroup[] | null }> = []
   let allFailed = true
@@ -212,7 +212,7 @@ export async function groupSentencesWithLLM(
       await options.betweenChunks()
     }
     const chunk = chunks[i]
-    const result = await callDeepseekForChunk(chunk, apiKey, requestJson)
+    const result = await callLLMForChunk(chunk, llm, requestJson)
     if (result !== null) allFailed = false
     chunkResults.push({ chunkCueIds: chunk.map((c) => c.id), groups: result })
   }

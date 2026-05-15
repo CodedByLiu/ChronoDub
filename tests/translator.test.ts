@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import type { LLMConfig } from '../src/types'
 import {
   compressTranslation,
   translateSegments,
-} from '../src/main/services/deepseek'
+} from '../src/main/services/translator'
+
+const TEST_LLM: LLMConfig = {
+  baseUrl: 'https://api.example.com/v1',
+  model: 'test-model',
+  apiKey: 'test-key',
+}
 
 function createDeepseekResponse(translations: Array<{ id: number; text: string }>): Response {
   return new Response(
@@ -80,7 +87,7 @@ test('translateSegments includes max_chars when budget map is provided', async (
   try {
     const outcome = await translateSegments(
       [{ id: 0, text: 'Open settings.' }],
-      'test-key',
+      TEST_LLM,
       [],
       new Map([[0, 8]])
     )
@@ -119,7 +126,7 @@ test('translateSegments recovers missing ids with single-item retry', async () =
   }) as typeof fetch
 
   try {
-    const outcome = await translateSegments(sourceItems, 'test-key', [])
+    const outcome = await translateSegments(sourceItems, TEST_LLM, [])
     assert.equal(outcome.translations.get(0), zhLine0)
     assert.equal(outcome.translations.get(1), zhLine1)
     assert.equal(outcome.issues.length, 0)
@@ -142,7 +149,7 @@ test('translateSegments falls back to last raw output when retries exhaust', asy
   }) as typeof fetch
 
   try {
-    const outcome = await translateSegments([{ id: 0, text: source }], 'test-key', [])
+    const outcome = await translateSegments([{ id: 0, text: source }], TEST_LLM, [])
     assert.equal(outcome.translations.get(0), source)
     assert.equal(outcome.issues.length, 1)
     assert.equal(outcome.issues[0]?.id, 0)
@@ -165,7 +172,7 @@ test('translateSegments keeps max_chars on issue items in fallback mode', async 
   try {
     const outcome = await translateSegments(
       [{ id: 0, text: source }],
-      'test-key',
+      TEST_LLM,
       [],
       new Map([[0, 12]])
     )
@@ -195,7 +202,7 @@ test('translateSegments retries over-compressed sentence translations', async ()
   }) as typeof fetch
 
   try {
-    const outcome = await translateSegments([{ id: 0, text: source }], 'test-key', [])
+    const outcome = await translateSegments([{ id: 0, text: source }], TEST_LLM, [])
     assert.equal(outcome.translations.get(0), fullSentence)
     assert.equal(outcome.issues.length, 0)
     assert.equal(callCount, 2)
@@ -217,7 +224,7 @@ test('translateSegments allows short technical tokens unchanged', async () => {
   }) as typeof fetch
 
   try {
-    const outcome = await translateSegments([{ id: 0, text: 'HTTP' }], 'test-key', [])
+    const outcome = await translateSegments([{ id: 0, text: 'HTTP' }], TEST_LLM, [])
     assert.equal(outcome.translations.get(0), 'HTTP')
     assert.equal(outcome.issues.length, 0)
     assert.equal(strictPromptCalls, 1)
@@ -239,7 +246,7 @@ test('translateSegments flags paraphrased full-English output as issue', async (
   }) as typeof fetch
 
   try {
-    const outcome = await translateSegments([{ id: 0, text: source }], 'test-key', [])
+    const outcome = await translateSegments([{ id: 0, text: source }], TEST_LLM, [])
     assert.equal(outcome.translations.get(0), englishParaphrase)
     assert.equal(outcome.issues.length, 1)
     assert.equal(outcome.issues[0]?.id, 0)
@@ -260,7 +267,7 @@ test('translateSegments short-circuits letter-recitation source without calling 
   }) as typeof fetch
 
   try {
-    const outcome = await translateSegments([{ id: 0, text: source }], 'test-key', [])
+    const outcome = await translateSegments([{ id: 0, text: source }], TEST_LLM, [])
     assert.equal(outcome.translations.get(0), 'a b b a')
     assert.equal(outcome.issues.length, 0)
     assert.equal(callCount, 0)
@@ -284,7 +291,7 @@ test('translateSegments accepts short Chinese when budget is tight', async () =>
   try {
     const outcome = await translateSegments(
       [{ id: 0, text: source }],
-      'test-key',
+      TEST_LLM,
       [],
       new Map([[0, 10]])
     )
@@ -309,7 +316,7 @@ test('compressTranslation retries when candidate regresses to full English', asy
   }) as typeof fetch
 
   try {
-    const compressed = await compressTranslation('\u5148\u6253\u5f00\u8bbe\u7f6e\uff0c\u7136\u540e\u7ee7\u7eed\u4e0b\u4e00\u6b65\u3002', 12, 'test-key')
+    const compressed = await compressTranslation('\u5148\u6253\u5f00\u8bbe\u7f6e\uff0c\u7136\u540e\u7ee7\u7eed\u4e0b\u4e00\u6b65\u3002', 12, TEST_LLM)
     assert.equal(compressed, '\u5148\u6253\u5f00\u8bbe\u7f6e\u518d\u7ee7\u7eed\u3002')
     assert.equal(callCount, 2)
   } finally {

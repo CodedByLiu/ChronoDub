@@ -1,16 +1,22 @@
-export const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions'
-export const DEEPSEEK_TEST_TIMEOUT_MS = 15_000
-export const DEEPSEEK_TRANSLATE_TIMEOUT_MS = 45_000
-export const DEEPSEEK_COMPRESS_TIMEOUT_MS = 45_000
-export const DEEPSEEK_REWRITE_TIMEOUT_MS = 60_000
+import type { LLMConfig } from '../../types'
+
+export const LLM_TEST_TIMEOUT_MS = 15_000
+export const LLM_TRANSLATE_TIMEOUT_MS = 45_000
+export const LLM_COMPRESS_TIMEOUT_MS = 45_000
+export const LLM_REWRITE_TIMEOUT_MS = 60_000
 
 export interface ChatMessage {
   role: 'system' | 'user'
   content: string
 }
 
+function resolveEndpoint(baseUrl: string): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '')
+  return `${trimmed}/chat/completions`
+}
+
 function buildChatRequest(
-  apiKey: string,
+  llm: LLMConfig,
   messages: ChatMessage[],
   maxTokens: number,
   temperature: number
@@ -19,10 +25,10 @@ function buildChatRequest(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${llm.apiKey}`,
     },
     body: JSON.stringify({
-      model: 'deepseek-chat',
+      model: llm.model,
       response_format: { type: 'json_object' },
       messages,
       max_tokens: maxTokens,
@@ -52,8 +58,8 @@ export async function fetchWithTimeout(
   }
 }
 
-export async function requestDeepseekJson<T>(
-  apiKey: string,
+export async function requestLLMJson<T>(
+  llm: LLMConfig,
   messages: ChatMessage[],
   maxTokens: number,
   temperature: number,
@@ -61,47 +67,51 @@ export async function requestDeepseekJson<T>(
   timeoutMessage: string
 ): Promise<T> {
   const response = await fetchWithTimeout(
-    DEEPSEEK_API_URL,
-    buildChatRequest(apiKey, messages, maxTokens, temperature),
+    resolveEndpoint(llm.baseUrl),
+    buildChatRequest(llm, messages, maxTokens, temperature),
     timeoutMs,
     timeoutMessage
   )
 
   if (!response.ok) {
     const errBody = await response.text()
-    throw new Error(`DeepSeek API ${response.status}: ${errBody}`)
+    throw new Error(`LLM API ${response.status}: ${errBody}`)
   }
 
   const data = await response.json()
   const content = data.choices?.[0]?.message?.content
   if (!content) {
-    throw new Error('DeepSeek returned empty content')
+    throw new Error('LLM returned empty content')
   }
 
   return JSON.parse(content) as T
 }
 
-export async function testDeepseekPing(apiKey: string): Promise<{ ok: boolean; message?: string }> {
-  const key = apiKey.trim()
-  if (!key) return { ok: false, message: '未填写 API Key' }
+export async function testLLMPing(llm: LLMConfig): Promise<{ ok: boolean; message?: string }> {
+  const baseUrl = llm.baseUrl?.trim() ?? ''
+  const model = llm.model?.trim() ?? ''
+  const apiKey = llm.apiKey?.trim() ?? ''
+  if (!baseUrl) return { ok: false, message: '未填写 Base URL' }
+  if (!model) return { ok: false, message: '未填写模型名称' }
+  if (!apiKey) return { ok: false, message: '未填写 API Key' }
 
   try {
     const response = await fetchWithTimeout(
-      DEEPSEEK_API_URL,
+      resolveEndpoint(baseUrl),
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${key}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: 'deepseek-chat',
+          model,
           messages: [{ role: 'user', content: 'ping' }],
           max_tokens: 1,
         }),
       },
-      DEEPSEEK_TEST_TIMEOUT_MS,
-      `DeepSeek 连接超时（${Math.round(DEEPSEEK_TEST_TIMEOUT_MS / 1000)} 秒）`
+      LLM_TEST_TIMEOUT_MS,
+      `LLM 连接超时（${Math.round(LLM_TEST_TIMEOUT_MS / 1000)} 秒）`
     )
 
     if (response.ok) return { ok: true }

@@ -2,8 +2,9 @@ import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
+import type { LLMConfig } from '../types'
 import { registerIpcHandlers } from './ipc-handlers'
-import { testDeepseekConnection } from './services/deepseek'
+import { testLLMConnection } from './services/translator'
 import { pauseAllActiveTasks } from './services/pipeline'
 import { normalizeInterruptedTaskSnapshots } from './task-registry'
 
@@ -60,12 +61,12 @@ app.whenReady().then(() => {
   }
 
   try {
-    ipcMain.removeHandler('deepseek:test-key')
+    ipcMain.removeHandler('llm:test')
   } catch {
     /* noop */
   }
-  ipcMain.handle('deepseek:test-key', async (_event, apiKey: string) => {
-    return testDeepseekConnection(apiKey)
+  ipcMain.handle('llm:test', async (_event, llm: LLMConfig) => {
+    return testLLMConnection(llm)
   })
   registerIpcHandlers()
   createWindow()

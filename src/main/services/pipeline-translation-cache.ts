@@ -1,6 +1,6 @@
 import type { AppConfig } from '../../types'
 import { sendToRenderer } from './pipeline-progress'
-import { TRANSLATION_STRATEGY_VERSION, type TranslationIssueItem } from './deepseek'
+import { TRANSLATION_STRATEGY_VERSION, type TranslationIssueItem } from './translator'
 import {
   taskSegmentTranslationCache,
   taskTranslationIssues,
@@ -60,6 +60,8 @@ export function buildTranslationConfigSignature(
     dictionary,
     selectedVoice: config.selectedVoice.trim(),
     grouping: groupingSignature ?? 'naive',
+    llmBaseUrl: config.llm.baseUrl.trim(),
+    llmModel: config.llm.model.trim(),
   })
 }
 

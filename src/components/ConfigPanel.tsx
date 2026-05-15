@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import { PanelLeftClose } from 'lucide-react'
-import type { ConcurrencyOption, ReviewMode, SubtitleOutputMode, SubtitleStyleConfig } from '../types'
+import type {
+  ConcurrencyOption,
+  LLMConfig,
+  ReviewMode,
+  SubtitleOutputMode,
+  SubtitleStyleConfig,
+} from '../types'
 import { DEFAULT_SUBTITLE_STYLE } from '../types'
 import { useAppStore } from '../stores/app-store'
 import { Button } from './ui/button'
 import { ScrollArea } from './ui/scroll-area'
 import { Separator } from './ui/separator'
-import { ApiKeySection } from './config-panel/ApiKeySection'
+import { LLMSection } from './config-panel/LLMSection'
 import { SubtitleOutputSection } from './config-panel/SubtitleOutputSection'
 import { DictionarySection } from './config-panel/DictionarySection'
 import { QualityVoiceSection } from './config-panel/QualityVoiceSection'
@@ -29,9 +35,9 @@ export function ConfigPanel() {
   const [newEn, setNewEn] = useState('')
   const [newZh, setNewZh] = useState('')
   const [testError, setTestError] = useState('')
-  const [showDeepseekKey, setShowDeepseekKey] = useState(false)
-  const [deepseekKeyTesting, setDeepseekKeyTesting] = useState(false)
-  const [deepseekKeyTestHint, setDeepseekKeyTestHint] = useState<{ ok: boolean; text: string } | null>(null)
+  const [showLLMKey, setShowLLMKey] = useState(false)
+  const [llmTesting, setLLMTesting] = useState(false)
+  const [llmTestHint, setLLMTestHint] = useState<{ ok: boolean; text: string } | null>(null)
   const [subtitleNumberDrafts, setSubtitleNumberDrafts] = useState<Record<SubtitleNumberField, string>>(
     () => buildSubtitleNumberDrafts(config.subtitleStyle)
   )
@@ -119,29 +125,39 @@ export function ConfigPanel() {
     }
   }, [config.selectedVoice, testing])
 
-  const handleTestDeepseekKey = useCallback(async () => {
-    const key = config.deepseekKey.trim()
-    if (!key || deepseekKeyTesting) return
-    setDeepseekKeyTesting(true)
-    setDeepseekKeyTestHint(null)
+  const handleTestLLM = useCallback(async () => {
+    const baseUrl = config.llm.baseUrl.trim()
+    const model = config.llm.model.trim()
+    const apiKey = config.llm.apiKey.trim()
+    if (!baseUrl || !model || !apiKey || llmTesting) return
+    setLLMTesting(true)
+    setLLMTestHint(null)
     try {
-      const testKeyFn = window.api?.deepseek?.testKey
-      if (!testKeyFn) {
-        setDeepseekKeyTestHint({ ok: false, text: '未加载 DeepSeek 接口，请完全退出应用后重新启动' })
+      const testFn = window.api?.llm?.test
+      if (!testFn) {
+        setLLMTestHint({ ok: false, text: '未加载 LLM 接口，请完全退出应用后重新启动' })
         return
       }
-      const result = await testKeyFn(key)
+      const result = await testFn({ baseUrl, model, apiKey })
       if (!result) {
-        setDeepseekKeyTestHint({ ok: false, text: '主进程无响应' })
+        setLLMTestHint({ ok: false, text: '主进程无响应' })
         return
       }
-      setDeepseekKeyTestHint(result.ok ? { ok: true, text: '连接成功' } : { ok: false, text: result.message || '连接失败' })
+      setLLMTestHint(result.ok ? { ok: true, text: '连接成功' } : { ok: false, text: result.message || '连接失败' })
     } catch (err: unknown) {
-      setDeepseekKeyTestHint({ ok: false, text: err instanceof Error ? err.message : '测试失败' })
+      setLLMTestHint({ ok: false, text: err instanceof Error ? err.message : '测试失败' })
     } finally {
-      setDeepseekKeyTesting(false)
+      setLLMTesting(false)
     }
-  }, [config.deepseekKey, deepseekKeyTesting])
+  }, [config.llm, llmTesting])
+
+  const handleChangeLLM = useCallback(
+    (partial: Partial<LLMConfig>) => {
+      setConfig({ llm: { ...config.llm, ...partial } })
+      setLLMTestHint(null)
+    },
+    [config.llm, setConfig]
+  )
 
   const handleSubtitleNumberDraftChange = useCallback((field: SubtitleNumberField, value: string) => {
     setSubtitleNumberDrafts((state) => ({
@@ -182,17 +198,14 @@ export function ConfigPanel() {
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-6 p-4">
-          <ApiKeySection
-            deepseekKey={config.deepseekKey}
-            showKey={showDeepseekKey}
-            testing={deepseekKeyTesting}
-            hint={deepseekKeyTestHint}
-            onChangeKey={(value) => {
-              setConfig({ deepseekKey: value })
-              setDeepseekKeyTestHint(null)
-            }}
-            onToggleShowKey={() => setShowDeepseekKey((value) => !value)}
-            onTest={handleTestDeepseekKey}
+          <LLMSection
+            llm={config.llm}
+            showKey={showLLMKey}
+            testing={llmTesting}
+            hint={llmTestHint}
+            onChangeLLM={handleChangeLLM}
+            onToggleShowKey={() => setShowLLMKey((value) => !value)}
+            onTest={handleTestLLM}
           />
 
           <Separator />
@@ -237,7 +250,7 @@ export function ConfigPanel() {
             autoReviewCountdown={config.autoReviewCountdown}
             createVideoSubfolder={config.createVideoSubfolder}
             useLLMSentenceGrouping={config.useLLMSentenceGrouping}
-            hasDeepseekKey={config.deepseekKey.trim().length > 0}
+            hasLLMKey={config.llm.apiKey.trim().length > 0}
             onChangeConcurrent={(value) => setConfig({ maxConcurrentTasks: value as ConcurrencyOption })}
             onChangeReviewMode={(value) => setConfig({ reviewMode: value as ReviewMode })}
             onChangeAutoReviewCountdown={(value) =>

@@ -11,6 +11,7 @@ let pipelineRunner: ((taskId: string, videoPath: string, subtitlePath: string, c
 function cloneConfig(config: AppConfig): AppConfig {
   return {
     ...config,
+    llm: { ...config.llm },
     dictionary: config.dictionary.map((item) => ({ ...item })),
     subtitleStyle: { ...config.subtitleStyle },
   }
@@ -74,7 +75,9 @@ export function getConcurrentPipelineLimit(config?: AppConfig): number {
 
 export function validateTaskConfig(config: AppConfig): string | null {
   if (!config.selectedVoice?.trim()) return '未选择 TTS 声音，请先在配置面板中选择语音'
-  if (!config.deepseekKey?.trim()) return '未填写 DeepSeek API Key，请先在配置面板中完成配置'
+  if (!config.llm?.baseUrl?.trim()) return '未填写 LLM Base URL，请先在配置面板中完成配置'
+  if (!config.llm?.model?.trim()) return '未填写 LLM 模型名称，请先在配置面板中完成配置'
+  if (!config.llm?.apiKey?.trim()) return '未填写 LLM API Key，请先在配置面板中完成配置'
   if (!config.outputDir?.trim()) return '未选择输出目录，请先设置输出目录'
   return null
 }

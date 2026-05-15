@@ -1,14 +1,15 @@
+import type { LLMConfig } from '../../types'
 import {
-  DEEPSEEK_TRANSLATE_TIMEOUT_MS,
-  requestDeepseekJson,
-  testDeepseekPing,
-} from './deepseek-client'
+  LLM_TRANSLATE_TIMEOUT_MS,
+  requestLLMJson,
+  testLLMPing,
+} from './llm-client'
 import {
   isAcceptableTranslatedText,
   normalizeSpaces,
 } from './text-guard'
 import { applyTerminologyToChinese } from './terminology'
-import { compressTranslation } from './deepseek-compress'
+import { compressTranslation } from './llm-compress'
 
 const BATCH_SIZE = 15
 const MAX_RETRIES = 3
@@ -102,7 +103,7 @@ function buildRepairSection(): string {
 
 async function requestBatchTranslations(
   items: TranslationInputItem[],
-  apiKey: string,
+  llm: LLMConfig,
   dictionary: Array<{ en: string; zh: string }>,
   strictMode: boolean,
   repairMode = false
@@ -116,8 +117,8 @@ async function requestBatchTranslations(
     ...(typeof item.maxChars === 'number' && item.maxChars > 0 ? { max_chars: item.maxChars } : {}),
   }))
 
-  const parsed = await requestDeepseekJson<TranslationResult>(
-    apiKey,
+  const parsed = await requestLLMJson<TranslationResult>(
+    llm,
     [
       {
         role: 'system',
@@ -127,8 +128,8 @@ async function requestBatchTranslations(
     ],
     4096,
     0.3,
-    DEEPSEEK_TRANSLATE_TIMEOUT_MS,
-    `DeepSeek 翻译超时（${Math.round(DEEPSEEK_TRANSLATE_TIMEOUT_MS / 1000)} 秒）`
+    LLM_TRANSLATE_TIMEOUT_MS,
+    `LLM 翻译超时（${Math.round(LLM_TRANSLATE_TIMEOUT_MS / 1000)} 秒）`
   )
 
   const expectedIds = new Set(items.map((item) => item.id))
@@ -167,7 +168,7 @@ function validateBatchTranslations(
 
 async function recoverMissingTranslations(
   missingItems: TranslationInputItem[],
-  apiKey: string,
+  llm: LLMConfig,
   dictionary: Array<{ en: string; zh: string }>,
   rawCapture: Map<number, string>
 ): Promise<Map<number, string>> {
@@ -176,7 +177,7 @@ async function recoverMissingTranslations(
   for (const item of missingItems) {
     for (let attempt = 0; attempt < SINGLE_ITEM_RETRIES; attempt++) {
       try {
-        const raw = await requestBatchTranslations([item], apiKey, dictionary, true, true)
+        const raw = await requestBatchTranslations([item], llm, dictionary, true, true)
         const rawText = raw.get(item.id)
         if (typeof rawText === 'string') {
           const candidate = normalizeSpaces(rawText)
@@ -203,7 +204,7 @@ async function recoverMissingTranslations(
 
 async function translateBatch(
   items: TranslationInputItem[],
-  apiKey: string,
+  llm: LLMConfig,
   dictionary: Array<{ en: string; zh: string }>
 ): Promise<TranslationOutcome> {
   const lastRawByItem = new Map<number, string>()
@@ -211,7 +212,7 @@ async function translateBatch(
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     let parsed: Map<number, string>
     try {
-      parsed = await requestBatchTranslations(items, apiKey, dictionary, true)
+      parsed = await requestBatchTranslations(items, llm, dictionary, true)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.warn(`translateBatch attempt ${attempt + 1}/${MAX_RETRIES} failed: ${message}`)
@@ -234,7 +235,7 @@ async function translateBatch(
       continue
     }
 
-    const recovered = await recoverMissingTranslations(unresolved, apiKey, dictionary, lastRawByItem)
+    const recovered = await recoverMissingTranslations(unresolved, llm, dictionary, lastRawByItem)
     for (const [id, text] of recovered) resolved.set(id, text)
     const stillFailing = unresolved.filter((item) => !resolved.has(item.id))
     if (stillFailing.length === 0) return { translations: resolved, issues: [] }
@@ -265,7 +266,7 @@ function isUntranslatableSource(text: string): boolean {
 
 async function translateItems(
   items: TranslationInputItem[],
-  apiKey: string,
+  llm: LLMConfig,
   dictionary: Array<{ en: string; zh: string }>,
   betweenBatches?: () => void | Promise<void>
 ): Promise<TranslationOutcome> {
@@ -284,7 +285,7 @@ async function translateItems(
   for (let i = 0; i < translatable.length; i += BATCH_SIZE) {
     await betweenBatches?.()
     const batch = translatable.slice(i, i + BATCH_SIZE)
-    const outcome = await translateBatch(batch, apiKey, dictionary)
+    const outcome = await translateBatch(batch, llm, dictionary)
     for (const [id, text] of outcome.translations) translations.set(id, text)
     for (const issue of outcome.issues) issues.push(issue)
   }
@@ -292,15 +293,15 @@ async function translateItems(
   return { translations, issues }
 }
 
-export async function testDeepseekConnection(
-  apiKey: string
+export async function testLLMConnection(
+  llm: LLMConfig
 ): Promise<{ ok: boolean; message?: string }> {
-  return testDeepseekPing(apiKey)
+  return testLLMPing(llm)
 }
 
 export async function translateSegments(
   segments: Array<{ id: number; text: string }>,
-  apiKey: string,
+  llm: LLMConfig,
   dictionary: Array<{ en: string; zh: string }>,
   maxCharsPerSegment?: Map<number, number>,
   betweenBatches?: () => void | Promise<void>
@@ -311,7 +312,7 @@ export async function translateSegments(
       text: segment.text,
       ...(maxCharsPerSegment ? { maxChars: maxCharsPerSegment.get(segment.id) } : {}),
     })),
-    apiKey,
+    llm,
     dictionary,
     betweenBatches
   )

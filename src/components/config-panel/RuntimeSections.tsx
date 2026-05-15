@@ -13,7 +13,7 @@ interface RuntimeSectionsProps {
   autoReviewCountdown: number
   createVideoSubfolder: boolean
   useLLMSentenceGrouping: boolean
-  hasDeepseekKey: boolean
+  hasLLMKey: boolean
   onChangeConcurrent: (value: ConcurrencyOption) => void
   onChangeReviewMode: (value: ReviewMode) => void
   onChangeAutoReviewCountdown: (value: number) => void
@@ -27,7 +27,7 @@ export function RuntimeSections({
   autoReviewCountdown,
   createVideoSubfolder,
   useLLMSentenceGrouping,
-  hasDeepseekKey,
+  hasLLMKey,
   onChangeConcurrent,
   onChangeReviewMode,
   onChangeAutoReviewCountdown,
@@ -113,22 +113,22 @@ export function RuntimeSections({
         <Label>合成质量优化</Label>
         <label
           className={`flex items-start gap-3 rounded-md border border-border bg-background/40 px-3 py-2 ${
-            hasDeepseekKey ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+            hasLLMKey ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
           }`}
         >
           <input
             type="checkbox"
             className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
-            checked={useLLMSentenceGrouping && hasDeepseekKey}
-            disabled={!hasDeepseekKey}
+            checked={useLLMSentenceGrouping && hasLLMKey}
+            disabled={!hasLLMKey}
             onChange={(event) => onChangeUseLLMSentenceGrouping(event.target.checked)}
           />
           <div className="space-y-1">
-            <div className="text-sm">使用 DeepSeek 智能分句（推荐）</div>
+            <div className="text-sm">使用 LLM 智能分句（推荐）</div>
             <p className="text-xs text-muted-foreground">
-              {hasDeepseekKey
-                ? '翻译前先用 DeepSeek 判断哪些相邻字幕属于同一句话再合并，可消除中文配音的句中停顿。每个视频会多几次 API 调用（结果会缓存）。'
-                : '需先在上方配置 DeepSeek API Key 才能启用。'}
+              {hasLLMKey
+                ? '翻译前先用 LLM 判断哪些相邻字幕属于同一句话再合并，可消除中文配音的句中停顿。每个视频会多几次 API 调用（结果会缓存）。'
+                : '需先在上方配置 LLM 服务才能启用。'}
             </p>
           </div>
         </label>

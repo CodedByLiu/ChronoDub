@@ -57,13 +57,13 @@ export function extractTaskErrorDetail(err: unknown): string | undefined {
   return detail.length > 500 ? `${detail.slice(0, 497)}...` : detail
 }
 
-function extractDeepseekStatus(text: string): number | null {
-  const match = text.match(/deepseek api\s+(\d{3})/i)
+function extractLLMStatus(text: string): number | null {
+  const match = text.match(/llm api\s+(\d{3})/i)
   return match ? Number(match[1]) : null
 }
 
 function inferErrorArea(status: TaskStatus | undefined, haystack: string, rawMessage: string): ErrorArea {
-  if (status === 'translating' || /deepseek|translation|chat\/completions/i.test(haystack)) {
+  if (status === 'translating' || /llm|translation|chat\/completions/i.test(haystack)) {
     return '字幕翻译'
   }
   if (status === 'synthesizing' || /tts|speech\.platform\.bing\.com|readaloud|websocket/i.test(haystack)) {
@@ -91,7 +91,7 @@ export function normalizeTaskError(err: unknown, status?: TaskStatus): string {
   const signals = collectErrorText(err)
   const haystack = signals.join(' | ').toLowerCase()
   const rawMessage = signals.find((item) => item && !/^(aggregateerror|error)$/i.test(item)) || ''
-  const deepseekStatus = extractDeepseekStatus(rawMessage)
+  const llmStatus = extractLLMStatus(rawMessage)
   const area = inferErrorArea(status, haystack, rawMessage)
   const serviceName = networkAreaName(area)
 
@@ -117,21 +117,21 @@ export function normalizeTaskError(err: unknown, status?: TaskStatus): string {
     return formatTaskError(area, `无法连接${serviceName}`, '请检查网络或代理')
   }
 
-  if (deepseekStatus === 401 || /invalid api key|unauthorized|authentication/i.test(rawMessage)) {
-    return formatTaskError('字幕翻译', 'DeepSeek API Key 无效', '请检查配置')
+  if (llmStatus === 401 || /invalid api key|unauthorized|authentication/i.test(rawMessage)) {
+    return formatTaskError('字幕翻译', 'LLM API Key 无效', '请检查配置')
   }
-  if (deepseekStatus === 403 || /forbidden/i.test(rawMessage)) {
-    return formatTaskError('字幕翻译', 'DeepSeek 请求被拒绝', '请检查权限或网络环境')
+  if (llmStatus === 403 || /forbidden/i.test(rawMessage)) {
+    return formatTaskError('字幕翻译', 'LLM 请求被拒绝', '请检查权限或网络环境')
   }
-  if (deepseekStatus === 429 || /too many requests|rate limit/i.test(rawMessage)) {
-    return formatTaskError('字幕翻译', 'DeepSeek 请求过于频繁', '请稍后重试')
+  if (llmStatus === 429 || /too many requests|rate limit/i.test(rawMessage)) {
+    return formatTaskError('字幕翻译', 'LLM 请求过于频繁', '请稍后重试')
   }
-  if ((deepseekStatus !== null && deepseekStatus >= 500) || /bad gateway|service unavailable|gateway timeout/i.test(rawMessage)) {
+  if ((llmStatus !== null && llmStatus >= 500) || /bad gateway|service unavailable|gateway timeout/i.test(rawMessage)) {
     return formatTaskError(area === '语音合成' ? '语音合成' : '字幕翻译', '服务暂时不可用', '请稍后重试')
   }
 
   if (/未选择 TTS 声音/i.test(rawMessage)) return formatTaskError('语音合成', '未选择 TTS 声音', '请先在配置面板中选择语音')
-  if (/未填写?\s*DeepSeek API Key/i.test(rawMessage)) return formatTaskError('字幕翻译', '未填写 DeepSeek API Key', '请先在配置面板中完成配置')
+  if (/未填写?\s*LLM\s*(?:Base URL|模型|API Key)/i.test(rawMessage)) return formatTaskError('字幕翻译', '未完成 LLM 配置', '请先在配置面板中完成配置')
   if (/未选择输出目录/i.test(rawMessage)) return formatTaskError('视频封装', '未选择输出目录', '请先设置输出目录')
   if (/subtitle|字幕.*解析/i.test(rawMessage)) return formatTaskError('字幕解析', '字幕文件无效或解析失败', '请检查字幕格式')
   if (/ffmpeg|ffprobe/i.test(rawMessage) && /enoent|not recognized|not found/i.test(rawMessage)) {

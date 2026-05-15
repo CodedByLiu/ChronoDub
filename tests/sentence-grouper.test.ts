@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { Cue, MicrosecondTimestamp } from '../src/types'
+import type { Cue, LLMConfig, MicrosecondTimestamp } from '../src/types'
 import { groupSentencesWithLLM, type RequestJsonFn } from '../src/main/services/sentence-grouper'
+
+const TEST_LLM: LLMConfig = {
+  baseUrl: 'https://api.example.com/v1',
+  model: 'test-model',
+  apiKey: 'k',
+}
 import {
   buildSegmentsFromGroups,
   groupCuesByGap,
@@ -30,7 +36,7 @@ test('groupSentencesWithLLM: single chunk, LLM returns one group', async () => {
   const cues = [cue(1, 0, 1000, 'a'), cue(2, 1100, 2000, 'b'), cue(3, 2100, 3000, 'c')]
   const requestJson = makeRequestJson([{ groups: [[1, 2, 3]] }])
   const { groups, usedFallback } = await groupSentencesWithLLM(cues, {
-    apiKey: 'k',
+    llm: TEST_LLM,
     requestJson,
   })
   assert.equal(usedFallback, false)
@@ -47,7 +53,7 @@ test('groupSentencesWithLLM: two chunks with overlap, later chunk wins', async (
   const chunk2Resp = { groups: [Array.from({ length: 14 }, (_, k) => k + 37)] }
   const requestJson = makeRequestJson([chunk1Resp, chunk2Resp])
   const { groups, usedFallback } = await groupSentencesWithLLM(cues, {
-    apiKey: 'k',
+    llm: TEST_LLM,
     requestJson,
   })
   assert.equal(usedFallback, false)
@@ -63,7 +69,7 @@ test('groupSentencesWithLLM: malformed response falls back per-chunk', async () 
   const cues = [cue(1, 0, 1000, 'a'), cue(2, 1100, 2000, 'b')]
   const requestJson = makeRequestJson([{ groups: [[1]] }]) // missing id 2
   const { groups, usedFallback } = await groupSentencesWithLLM(cues, {
-    apiKey: 'k',
+    llm: TEST_LLM,
     requestJson,
   })
   assert.equal(usedFallback, true)
@@ -75,7 +81,7 @@ test('groupSentencesWithLLM: network error falls back', async () => {
   const cues = [cue(1, 0, 1000, 'a'), cue(2, 5000, 6000, 'b')] // 4s gap
   const requestJson = makeRequestJson([new Error('boom')])
   const { groups, usedFallback } = await groupSentencesWithLLM(cues, {
-    apiKey: 'k',
+    llm: TEST_LLM,
     requestJson,
   })
   assert.equal(usedFallback, true)
@@ -91,7 +97,7 @@ test('groupSentencesWithLLM: empty apiKey skips LLM and falls back', async () =>
     return {} as never
   }) as RequestJsonFn
   const { groups, usedFallback } = await groupSentencesWithLLM(cues, {
-    apiKey: '',
+    llm: { ...TEST_LLM, apiKey: '' },
     requestJson,
   })
   assert.equal(called, false)

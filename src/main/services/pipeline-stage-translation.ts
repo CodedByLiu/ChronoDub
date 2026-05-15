@@ -4,7 +4,7 @@ import {
   applyTerminologyToChinese,
   isAcceptableTranslatedText,
   translateSegments,
-} from './deepseek'
+} from './translator'
 import { ffprobe } from './ffmpeg'
 import {
   assignBudgets,
@@ -113,13 +113,13 @@ export async function runTranslationStage(context: PipelineStageContext): Promis
   const cacheDir = resolveCacheDir(config.outputDir, videoPath)
   let groupingSignature: string | undefined
   let segments: Segment[]
-  if (config.useLLMSentenceGrouping && config.deepseekKey.trim().length > 0) {
+  if (config.useLLMSentenceGrouping && config.llm.apiKey.trim().length > 0) {
     groupingSignature = computeGroupingSignature(englishCues)
     const cachedGroups = cacheDir
       ? loadSentenceGroupCache(cacheDir, taskId, groupingSignature)
       : null
     const { groups, usedFallback } = await groupSentencesWithLLM(englishCues, {
-      apiKey: config.deepseekKey,
+      llm: config.llm,
       cachedGroups,
       betweenChunks: async () => {
         await checkPaused(taskId)
@@ -182,7 +182,7 @@ export async function runTranslationStage(context: PipelineStageContext): Promis
 
     const outcome = await translateSegments(
       pendingSegments.map((segment) => ({ id: segment.id, text: segment.textEn })),
-      config.deepseekKey,
+      config.llm,
       config.dictionary,
       pendingBudgetMap.size > 0 ? pendingBudgetMap : undefined,
       async () => {

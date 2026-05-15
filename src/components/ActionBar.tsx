@@ -109,9 +109,9 @@ export function ActionBar() {
   }
 
   const handleStart = () => {
-    if (!config.deepseekKey.trim()) {
+    if (!config.llm.apiKey.trim() || !config.llm.baseUrl.trim() || !config.llm.model.trim()) {
       if (!sidebarOpen) setSidebarOpen(true)
-      window.alert('请先在左侧配置面板中填写 DeepSeek API Key，再开始处理。')
+      window.alert('请先在左侧配置面板中完成 LLM 服务配置（Base URL / Model / API Key），再开始处理。')
       return
     }
 

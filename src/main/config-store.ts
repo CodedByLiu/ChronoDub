@@ -2,7 +2,7 @@ import { app } from 'electron'
 import { join, dirname } from 'path'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { existsSync, readFileSync } from 'fs'
-import type { AppConfig } from '../types'
+import type { AppConfig, LLMConfig } from '../types'
 import { CONCURRENCY_OPTIONS, DEFAULT_CONFIG } from '../types'
 
 let cachedConfig: AppConfig | null = null
@@ -11,25 +11,39 @@ function getConfigPath(): string {
   return join(app.getPath('userData'), 'config.json')
 }
 
-function normalizeConfig(config: Partial<AppConfig> | null | undefined): AppConfig {
-  const merged = { ...DEFAULT_CONFIG, ...(config ?? {}) }
+type LegacyAppConfig = Partial<AppConfig> & { deepseekKey?: string }
+
+function normalizeConfig(config: LegacyAppConfig | null | undefined): AppConfig {
+  const incoming = config ?? {}
+  const mergedLLM: LLMConfig = {
+    ...DEFAULT_CONFIG.llm,
+    ...(incoming.llm ?? {}),
+  }
+  if (!mergedLLM.apiKey?.trim() && typeof incoming.deepseekKey === 'string' && incoming.deepseekKey.trim()) {
+    mergedLLM.apiKey = incoming.deepseekKey
+  }
+
+  const merged = { ...DEFAULT_CONFIG, ...incoming, llm: mergedLLM }
   const maxConcurrentTasks = CONCURRENCY_OPTIONS.includes(merged.maxConcurrentTasks)
     ? merged.maxConcurrentTasks
     : DEFAULT_CONFIG.maxConcurrentTasks
 
-  return {
+  const normalized: AppConfig = {
     ...merged,
     subtitleStyle: {
       ...DEFAULT_CONFIG.subtitleStyle,
-      ...(config?.subtitleStyle ?? {}),
+      ...(incoming.subtitleStyle ?? {}),
     },
     maxConcurrentTasks,
   }
+  delete (normalized as LegacyAppConfig).deepseekKey
+  return normalized
 }
 
 function cloneConfig(config: AppConfig): AppConfig {
   return {
     ...config,
+    llm: { ...config.llm },
     dictionary: config.dictionary.map((item) => ({ ...item })),
     subtitleStyle: { ...config.subtitleStyle },
   }

@@ -1,5 +1,5 @@
 import type { TaskStatus } from '../../types'
-import type { TranslationIssueItem } from './deepseek'
+import type { TranslationIssueItem } from './translator'
 import type { ReviewSessionState } from './review-session'
 
 export interface TaskState extends ReviewSessionState {

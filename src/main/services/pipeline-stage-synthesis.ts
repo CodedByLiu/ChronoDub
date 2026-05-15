@@ -1,6 +1,6 @@
 import type { AppConfig, Cue } from '../../types'
 import type { ProcessedAudio } from './audio-processing'
-import { TRANSLATION_STRATEGY_VERSION } from './deepseek'
+import { TRANSLATION_STRATEGY_VERSION } from './translator'
 import { synthesizeWithFallback, type AssemblerSegment, type SegmentRisk } from './audio-processor'
 import { checkCancelled, checkPaused } from './pipeline-control'
 import { reportProgress, withTimeout } from './pipeline-progress'
@@ -91,7 +91,7 @@ export async function runSynthesisStage(context: SynthesisStageContext): Promise
             text,
             windowUs: win.windowUs,
             voice: config.selectedVoice,
-            apiKey: config.deepseekKey,
+            llm: config.llm,
             risk: (segmentRiskMap.get(seg.id) ?? 'medium') as SegmentRisk,
           }),
           SYNTHESIS_SEGMENT_TIMEOUT_MS,

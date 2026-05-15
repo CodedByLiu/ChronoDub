@@ -1,7 +1,8 @@
+import type { LLMConfig } from '../../types'
 import {
-  DEEPSEEK_COMPRESS_TIMEOUT_MS,
-  requestDeepseekJson,
-} from './deepseek-client'
+  LLM_COMPRESS_TIMEOUT_MS,
+  requestLLMJson,
+} from './llm-client'
 import { isAcceptableCompressedChinese, normalizeSpaces } from './text-guard'
 
 const MAX_RETRIES = 3
@@ -13,7 +14,7 @@ function sleep(ms: number): Promise<void> {
 export async function compressTranslation(
   text: string,
   targetChars: number,
-  apiKey: string
+  llm: LLMConfig
 ): Promise<string> {
   const systemPrompt = [
     `Compress the Chinese sentence below to no more than ${targetChars} characters.`,
@@ -26,16 +27,16 @@ export async function compressTranslation(
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const parsed = await requestDeepseekJson<{ text?: string }>(
-        apiKey,
+      const parsed = await requestLLMJson<{ text?: string }>(
+        llm,
         [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: text },
         ],
         512,
         0.2,
-        DEEPSEEK_COMPRESS_TIMEOUT_MS,
-        `DeepSeek 压缩超时（${Math.round(DEEPSEEK_COMPRESS_TIMEOUT_MS / 1000)} 秒）`
+        LLM_COMPRESS_TIMEOUT_MS,
+        `LLM 压缩超时（${Math.round(LLM_COMPRESS_TIMEOUT_MS / 1000)} 秒）`
       )
 
       const candidate = normalizeSpaces(parsed.text ?? '')
