@@ -4,6 +4,8 @@ import { getFFmpegPath } from './ffmpeg-binary'
 interface FfmpegRunOptions {
   isCancelled?: () => boolean
   cancelPollMs?: number
+  onProgress?: (ratio: number) => void
+  totalDurationUs?: number
 }
 
 const STDERR_TAIL_LIMIT = 32 * 1024
@@ -14,11 +16,18 @@ function runFfmpeg(
   options?: FfmpegRunOptions
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(getFFmpegPath(), args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const wantsProgress =
+      typeof options?.onProgress === 'function' &&
+      typeof options?.totalDurationUs === 'number' &&
+      options.totalDurationUs > 0
+    const finalArgs = wantsProgress ? ['-progress', 'pipe:1', '-nostats', ...args] : args
+    const proc = spawn(getFFmpegPath(), finalArgs, { stdio: ['ignore', 'pipe', 'pipe'] })
 
     let stderr = ''
     let cancelled = false
     let cancelTimer: ReturnType<typeof setInterval> | null = null
+    let progressBuf = ''
+    let lastReportedRatio = -1
 
     const cleanup = () => {
       if (cancelTimer) {
@@ -40,6 +49,30 @@ function runFfmpeg(
     if (options?.isCancelled) {
       checkCancel()
       cancelTimer = setInterval(checkCancel, options.cancelPollMs ?? 250)
+    }
+
+    if (wantsProgress) {
+      const totalUs = options!.totalDurationUs as number
+      const onProgress = options!.onProgress as (ratio: number) => void
+      proc.stdout.on('data', (chunk: Buffer) => {
+        progressBuf += chunk.toString()
+        let newlineIdx: number
+        while ((newlineIdx = progressBuf.indexOf('\n')) !== -1) {
+          const line = progressBuf.slice(0, newlineIdx).trim()
+          progressBuf = progressBuf.slice(newlineIdx + 1)
+          if (!line.startsWith('out_time_us=')) continue
+          const value = Number(line.slice('out_time_us='.length))
+          if (!Number.isFinite(value) || value < 0) continue
+          const ratio = Math.min(1, value / totalUs)
+          if (ratio - lastReportedRatio < 0.005) continue
+          lastReportedRatio = ratio
+          try {
+            onProgress(ratio)
+          } catch {
+            /* noop */
+          }
+        }
+      })
     }
 
     proc.stderr.on('data', (chunk: Buffer) => {

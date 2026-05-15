@@ -77,6 +77,10 @@ export function checkCancelled(taskId: string): void {
   if (state?.cancelled) throw new Error('TASK_CANCELLED')
 }
 
+export function isCancelled(taskId: string): boolean {
+  return activeTasks.get(taskId)?.cancelled === true
+}
+
 export async function checkPaused(taskId: string): Promise<void> {
   const state = activeTasks.get(taskId)
   if (!state || (!state.paused && !state.pauseRequested)) return

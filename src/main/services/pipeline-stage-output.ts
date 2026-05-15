@@ -5,7 +5,7 @@ import type { AppConfig, Cue, Segment } from '../../types'
 import { assembleToWav, type AssemblerSegment } from './audio-processor'
 import { burnSubtitlesIntoVideo, muxVideoWithAudio, type ProbeResult } from './ffmpeg'
 import { reserveOutputTarget } from './output-path'
-import { checkCancelled, checkPaused } from './pipeline-control'
+import { checkCancelled, checkPaused, isCancelled } from './pipeline-control'
 import { reportProgress, sendToRenderer } from './pipeline-progress'
 import { clearTaskTranslationRuntime } from './pipeline-translation-cache'
 import { clearSegmentCacheByPath } from './segment-cache'
@@ -23,15 +23,6 @@ interface OutputStageContext {
   finalizedCues: Cue[]
   segments: Segment[]
   assemblerSegments: AssemblerSegment[]
-}
-
-function isTaskCancelled(taskId: string): boolean {
-  try {
-    checkCancelled(taskId)
-    return false
-  } catch {
-    return true
-  }
 }
 
 export async function runOutputStage(context: OutputStageContext): Promise<void> {
@@ -69,7 +60,7 @@ export async function runOutputStage(context: OutputStageContext): Promise<void>
 
   try {
     reportProgress(taskId, 'assembling', 82, '正在拼接整条配音轨道')
-    tempDir = join(tmpdir(), `chronodub-${taskId}`)
+    tempDir = join(tmpdir(), `chronodub-${taskId}-${Date.now()}`)
     mkdirSync(tempDir, { recursive: true })
     const wavPath = join(tempDir, 'dubbed.wav')
     await assembleToWav(assemblerSegments, probeResult.durationUs, wavPath)
@@ -89,18 +80,32 @@ export async function runOutputStage(context: OutputStageContext): Promise<void>
     await checkPaused(taskId)
     checkCancelled(taskId)
 
+    const onEncodingProgress = (ratio: number): void => {
+      const pct = 88 + Math.round(ratio * 7)
+      reportProgress(taskId, 'encoding', Math.min(95, Math.max(88, pct)), '正在封装输出视频')
+    }
+    const pickDim = (a: number | null | undefined, b: number | null | undefined, fallback: number): number => {
+      for (const v of [a, b]) {
+        if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v
+      }
+      return fallback
+    }
     if (config.subtitleOutputMode === 'burned') {
       const assPath = join(tempDir, 'burned.ass')
       saveAssSubtitleFile(assPath, displayCues, config.subtitleStyle, {
-        width: probeResult.displayWidth ?? probeResult.videoWidth ?? 1920,
-        height: probeResult.displayHeight ?? probeResult.videoHeight ?? 1080,
+        width: pickDim(probeResult.displayWidth, probeResult.videoWidth, 1920),
+        height: pickDim(probeResult.displayHeight, probeResult.videoHeight, 1080),
       })
       await burnSubtitlesIntoVideo(videoPath, wavPath, assPath, reservedOutput.outputVideoPath, {
-        isCancelled: () => isTaskCancelled(taskId),
+        isCancelled: () => isCancelled(taskId),
+        onProgress: onEncodingProgress,
+        totalDurationUs: probeResult.durationUs,
       })
     } else {
       await muxVideoWithAudio(videoPath, wavPath, reservedOutput.outputVideoPath, {
-        isCancelled: () => isTaskCancelled(taskId),
+        isCancelled: () => isCancelled(taskId),
+        onProgress: onEncodingProgress,
+        totalDurationUs: probeResult.durationUs,
       })
     }
     outputVideoReady = true
@@ -113,12 +118,14 @@ export async function runOutputStage(context: OutputStageContext): Promise<void>
     await saveTaskCues(taskId, { englishCues, chineseCues: finalizedCues })
     sendToRenderer('task:cues-updated', taskId, englishCues, finalizedCues)
     clearTaskTranslationRuntime(taskId)
-    void clearSegmentCacheByPath(config.outputDir, videoPath)
+    void clearSegmentCacheByPath(config.outputDir, videoPath).catch((err) => {
+      console.warn(`[pipeline] clearSegmentCacheByPath failed for ${taskId}:`, err)
+    })
 
     reportProgress(taskId, 'completed', 100, '处理完成')
     stageCompleted = true
   } finally {
-    if (isTaskCancelled(taskId) || (!stageCompleted && !outputVideoReady)) {
+    if (isCancelled(taskId) || (!stageCompleted && !outputVideoReady)) {
       cleanupOutputArtifacts()
     }
     releaseOutput?.()
