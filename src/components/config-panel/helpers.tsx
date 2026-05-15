@@ -8,7 +8,7 @@ export interface Voice {
   gender: string
 }
 
-export function pickPreferredFont(fonts: string[]): string {
+export function pickPreferredFont(fonts: readonly string[]): string {
   for (const preferred of PREFERRED_SUBTITLE_FONTS) {
     const match = fonts.find((font) => font.toLocaleLowerCase() === preferred.toLocaleLowerCase())
     if (match) return match

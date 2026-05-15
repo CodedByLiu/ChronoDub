@@ -22,7 +22,7 @@ import { normalizeColorValue } from './helpers'
 interface SubtitleOutputSectionProps {
   outputMode: SubtitleOutputMode
   style: SubtitleStyleConfig
-  subtitleFonts: string[]
+  subtitleFonts: readonly string[]
   subtitleNumberDrafts: Record<SubtitleNumberField, string>
   onChangeOutputMode: (mode: SubtitleOutputMode) => void
   onSetStyle: (partial: Partial<SubtitleStyleConfig>) => void

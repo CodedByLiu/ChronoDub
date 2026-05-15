@@ -6,7 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 import { cn } from '../lib/utils'
 
 interface FontComboboxProps {
-  fonts: string[]
+  fonts: readonly string[]
   value: string
   onChange: (value: string) => void
   preferredFonts?: readonly string[]
