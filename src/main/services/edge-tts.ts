@@ -43,12 +43,13 @@ export async function getChineseVoices(): Promise<VoiceInfo[]> {
     const allVoices: any[] = await res.json()
 
     cachedVoices = allVoices
-      .filter((v) => v.Locale === 'zh-CN')
+      .filter((v) => v.Locale === 'zh-CN' || v.Locale === 'zh-TW')
       .map((v) => ({
         name: v.ShortName as string,
         locale: v.Locale as string,
         gender: v.Gender as string,
       }))
+      .sort(compareVoices)
   } catch {
     cachedVoices = ZH_CN_VOICES_FALLBACK
   }
@@ -56,24 +57,21 @@ export async function getChineseVoices(): Promise<VoiceInfo[]> {
   return cachedVoices
 }
 
+function compareVoices(a: VoiceInfo, b: VoiceInfo): number {
+  if (a.gender !== b.gender) return a.gender === 'Female' ? -1 : 1
+  return a.name.localeCompare(b.name)
+}
+
 const ZH_CN_VOICES_FALLBACK: VoiceInfo[] = [
   { name: 'zh-CN-XiaoxiaoNeural', locale: 'zh-CN', gender: 'Female' },
   { name: 'zh-CN-XiaoyiNeural', locale: 'zh-CN', gender: 'Female' },
+  { name: 'zh-TW-HsiaoChenNeural', locale: 'zh-TW', gender: 'Female' },
+  { name: 'zh-TW-HsiaoYuNeural', locale: 'zh-TW', gender: 'Female' },
   { name: 'zh-CN-YunjianNeural', locale: 'zh-CN', gender: 'Male' },
   { name: 'zh-CN-YunxiNeural', locale: 'zh-CN', gender: 'Male' },
   { name: 'zh-CN-YunxiaNeural', locale: 'zh-CN', gender: 'Male' },
   { name: 'zh-CN-YunyangNeural', locale: 'zh-CN', gender: 'Male' },
-  { name: 'zh-CN-XiaochenNeural', locale: 'zh-CN', gender: 'Female' },
-  { name: 'zh-CN-XiaohanNeural', locale: 'zh-CN', gender: 'Female' },
-  { name: 'zh-CN-XiaomengNeural', locale: 'zh-CN', gender: 'Female' },
-  { name: 'zh-CN-XiaomoNeural', locale: 'zh-CN', gender: 'Female' },
-  { name: 'zh-CN-XiaoruiNeural', locale: 'zh-CN', gender: 'Female' },
-  { name: 'zh-CN-XiaoxuanNeural', locale: 'zh-CN', gender: 'Female' },
-  { name: 'zh-CN-XiaoyanNeural', locale: 'zh-CN', gender: 'Female' },
-  { name: 'zh-CN-XiaozhenNeural', locale: 'zh-CN', gender: 'Female' },
-  { name: 'zh-CN-YunfengNeural', locale: 'zh-CN', gender: 'Male' },
-  { name: 'zh-CN-YunhaoNeural', locale: 'zh-CN', gender: 'Male' },
-  { name: 'zh-CN-YunzeNeural', locale: 'zh-CN', gender: 'Male' },
+  { name: 'zh-TW-YunJheNeural', locale: 'zh-TW', gender: 'Male' },
 ]
 
 function tempMp3Path(): string {

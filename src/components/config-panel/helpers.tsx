@@ -54,11 +54,6 @@ export function renderVoiceLabel(voiceName: string, voices: Voice[]) {
         <Mars className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
       )}
       <span>{cnName || voiceName}</span>
-      {cnName && (
-        <span className="text-xs text-muted-foreground">
-          {voiceName.replace('zh-CN-', '').replace('Neural', '')}
-        </span>
-      )}
     </span>
   )
 }
