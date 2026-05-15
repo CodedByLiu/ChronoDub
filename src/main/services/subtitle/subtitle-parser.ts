@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'fs'
 import { extname } from 'path'
 import { parseSync, stringifySync } from 'subtitle'
-import type { Cue } from '../../types'
+import type { Cue } from '../../../types'
 
 const MS_TO_US = 1000
 

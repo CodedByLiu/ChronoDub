@@ -1,5 +1,5 @@
-import type { Cue, Segment, TimeWindow } from '../../types'
-import type { AudioBoundary, ProcessedAudio, SegmentRisk } from './audio-processor'
+import type { Cue, Segment, TimeWindow } from '../../../types'
+import type { AudioBoundary, ProcessedAudio, SegmentRisk } from '../audio'
 import { joinCueTextsForSpeech, splitSegmentTextAcrossCues } from './subtitle-text-utils'
 
 const RETIME_MIN_CUE_US = 80_000

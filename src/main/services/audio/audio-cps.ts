@@ -1,6 +1,6 @@
-import type { MicrosecondTimestamp, TimeWindow } from '../../types'
-import { synthesize } from './edge-tts'
-import { decodeMp3ToPcm, measurePcmDurationUs, trimSilence } from './ffmpeg'
+import type { MicrosecondTimestamp, TimeWindow } from '../../../types'
+import { synthesize } from '../edge-tts'
+import { decodeMp3ToPcm, measurePcmDurationUs, trimSilence } from '../ffmpeg'
 import { CPS_SAFETY_FACTOR, MARGIN_SEC } from './audio-constants'
 
 let cpsCache = new Map<string, number>()

@@ -1,6 +1,6 @@
-import type { AppConfig, Cue, Segment } from '../../types'
-import type { ProbeResult } from './ffmpeg'
-import type { SegmentRisk } from './audio-processor'
+import type { AppConfig, Cue, Segment } from '../../../types'
+import type { ProbeResult } from '../ffmpeg'
+import type { SegmentRisk } from '../audio'
 
 export interface TranslationStageResult {
   englishCues: Cue[]

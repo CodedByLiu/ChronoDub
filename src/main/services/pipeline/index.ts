@@ -1,5 +1,5 @@
-import type { AppConfig } from '../../types'
-import { getRuntimeConfig } from '../runtime-config-store'
+import type { AppConfig } from '../../../types'
+import { getRuntimeConfig } from '../../runtime-config-store'
 import {
   cancelAllTasks,
   cancelTask,

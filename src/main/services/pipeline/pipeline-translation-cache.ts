@@ -1,18 +1,18 @@
-import type { AppConfig } from '../../types'
+import type { AppConfig } from '../../../types'
 import { sendToRenderer } from './pipeline-progress'
-import { TRANSLATION_STRATEGY_VERSION, type TranslationIssueItem } from './translator'
+import { TRANSLATION_STRATEGY_VERSION, type TranslationIssueItem } from '../translator'
 import {
   taskSegmentTranslationCache,
   taskTranslationIssues,
   type TaskTranslationCacheEntry,
 } from './pipeline-store'
-import { updateTaskTranslationIssuesSnapshot } from '../task-registry'
+import { updateTaskTranslationIssuesSnapshot } from '../../task-registry'
 import {
   clearSegmentCacheByPath,
   loadTranslationCache,
   resolveCacheDir,
   saveTranslationCache,
-} from './segment-cache'
+} from '../segment-cache'
 
 function cloneTranslationIssues(issues: TranslationIssueItem[]): TranslationIssueItem[] {
   return issues.map((item) => ({

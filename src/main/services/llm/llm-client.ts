@@ -1,4 +1,4 @@
-import type { LLMConfig } from '../../types'
+import type { LLMConfig } from '../../../types'
 
 export const LLM_TEST_TIMEOUT_MS = 15_000
 export const LLM_TRANSLATE_TIMEOUT_MS = 45_000

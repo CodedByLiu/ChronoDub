@@ -1,11 +1,16 @@
-import type { AppConfig, Cue, Segment } from '../../types'
-import { parseSubtitleFile } from './subtitle-parser'
+import type { AppConfig, Cue, Segment } from '../../../types'
+import {
+  computeSegmentTranslationBudget,
+  joinCueTextsForSpeech,
+  parseSubtitleFile,
+  splitSegmentTextAcrossCues,
+} from '../subtitle'
 import {
   applyTerminologyToChinese,
   isAcceptableTranslatedText,
   translateSegments,
-} from './translator'
-import { ffprobe } from './ffmpeg'
+} from '../translator'
+import { ffprobe } from '../ffmpeg'
 import {
   assignBudgets,
   buildSegments,
@@ -14,11 +19,7 @@ import {
   calibrateCPS,
   classifySegmentRisk,
   type SegmentRisk,
-} from './audio-processor'
-import {
-  computeSegmentTranslationBudget,
-} from './subtitle-timing'
-import { joinCueTextsForSpeech, splitSegmentTextAcrossCues } from './subtitle-text-utils'
+} from '../audio'
 import { checkCancelled, checkPaused } from './pipeline-control'
 import { reportProgress } from './pipeline-progress'
 import {
@@ -31,12 +32,12 @@ import { reviewCheckpoint } from './pipeline-review'
 import {
   computeGroupingSignature,
   groupSentencesWithLLM,
-} from './sentence-grouper'
+} from '../sentence-grouper'
 import {
   loadSentenceGroupCache,
   resolveCacheDir,
   saveSentenceGroupCache,
-} from './segment-cache'
+} from '../segment-cache'
 import type { TranslationStageResult, PipelineStageContext } from './pipeline-stage-types'
 
 function mapTranslatedCues(

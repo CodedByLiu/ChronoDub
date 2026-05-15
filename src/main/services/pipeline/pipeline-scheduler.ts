@@ -1,8 +1,8 @@
-import type { AppConfig } from '../../types'
-import { getRuntimeConfig, setRuntimeConfig } from '../runtime-config-store'
+import type { AppConfig } from '../../../types'
+import { getRuntimeConfig, setRuntimeConfig } from '../../runtime-config-store'
 import { reportProgress, reportTaskError, updateSleepBlocker } from './pipeline-progress'
 import { activeTasks, lastWorkStatus } from './pipeline-store'
-import { TaskScheduler, type ScheduledTaskEntry } from './task-scheduler'
+import { TaskScheduler, type ScheduledTaskEntry } from '../task-scheduler'
 
 let currentConcurrentPipelineLimit = 2
 let pipelineRunner: ((taskId: string, videoPath: string, subtitlePath: string, config: AppConfig) => Promise<void>) | null =

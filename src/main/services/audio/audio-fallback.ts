@@ -1,5 +1,5 @@
-import type { LLMConfig, MicrosecondTimestamp } from '../../types'
-import { compressTranslation } from './translator'
+import type { LLMConfig, MicrosecondTimestamp } from '../../../types'
+import { compressTranslation } from '../translator'
 import {
   clipProcessedAudioToWindow,
   synthesizeProcessedText,

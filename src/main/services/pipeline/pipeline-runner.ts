@@ -1,4 +1,4 @@
-import type { AppConfig } from '../../types'
+import type { AppConfig } from '../../../types'
 import { extractTaskErrorDetail, normalizeTaskError } from './pipeline-error'
 import {
   checkCancelled,

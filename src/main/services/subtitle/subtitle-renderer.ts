@@ -1,6 +1,6 @@
 import { writeFileSync } from 'fs'
-import type { Cue, SubtitlePosition, SubtitleStyleConfig } from '../../types'
-import { ASS_SOFT_WRAP_MAX_CHARS } from './audio-constants'
+import type { Cue, SubtitlePosition, SubtitleStyleConfig } from '../../../types'
+import { ASS_SOFT_WRAP_MAX_CHARS } from '../audio'
 
 const DEFAULT_PLAY_RES_X = 1920
 const DEFAULT_PLAY_RES_Y = 1080

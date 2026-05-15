@@ -1,9 +1,9 @@
-import type { LLMConfig } from '../../types'
+import type { LLMConfig } from '../../../types'
 import {
   LLM_COMPRESS_TIMEOUT_MS,
   requestLLMJson,
 } from './llm-client'
-import { isAcceptableCompressedChinese, normalizeSpaces } from './text-guard'
+import { isAcceptableCompressedChinese, normalizeSpaces } from '../text-guard'
 
 const MAX_RETRIES = 3
 

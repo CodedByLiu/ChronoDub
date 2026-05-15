@@ -1,4 +1,4 @@
-import type { Cue, MicrosecondTimestamp, Segment, SentenceGroup, TimeWindow } from '../../types'
+import type { Cue, MicrosecondTimestamp, Segment, SentenceGroup, TimeWindow } from '../../../types'
 import {
   MAX_SEGMENT_DURATION_US,
   MAX_SEGMENT_TEXT_CHARS,

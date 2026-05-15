@@ -1,4 +1,4 @@
-import type { TaskStatus } from '../../types'
+import type { TaskStatus } from '../../../types'
 
 type ErrorArea =
   | '字幕翻译'

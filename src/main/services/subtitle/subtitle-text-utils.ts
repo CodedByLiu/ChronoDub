@@ -1,5 +1,5 @@
-import type { Cue, MicrosecondTimestamp, Segment } from '../../types'
-import { SUBTITLE_MAX_CHARS_PER_CUE, SUBTITLE_SOFT_SPLIT_TARGET } from './audio-constants'
+import type { Cue, MicrosecondTimestamp, Segment } from '../../../types'
+import { SUBTITLE_MAX_CHARS_PER_CUE, SUBTITLE_SOFT_SPLIT_TARGET } from '../audio'
 
 const ASCII_WORD_CHAR_RE = /[A-Za-z0-9_./#+-]/
 const PREFERRED_SPLIT_AFTER_RE = /[\s,.;:!?\uFF0C\u3002\uFF1B\uFF1A\uFF01\uFF1F\u3001\uFF09)\]}]/

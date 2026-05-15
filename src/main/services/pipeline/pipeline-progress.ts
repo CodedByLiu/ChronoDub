@@ -1,5 +1,5 @@
 import { BrowserWindow, powerSaveBlocker } from 'electron'
-import type { TaskStatus } from '../../types'
+import type { TaskStatus } from '../../../types'
 import {
   activeTasks,
   BLOCK_SLEEP_STATUSES,
@@ -10,7 +10,7 @@ import {
   updateTaskCountdownSnapshot,
   updateTaskErrorSnapshot,
   updateTaskStatusSnapshot,
-} from '../task-registry'
+} from '../../task-registry'
 
 let sleepBlockerId: number | null = null
 

@@ -1,6 +1,6 @@
-import type { TaskStatus } from '../../types'
-import type { TranslationIssueItem } from './translator'
-import type { ReviewSessionState } from './review-session'
+import type { TaskStatus } from '../../../types'
+import type { TranslationIssueItem } from '../translator'
+import type { ReviewSessionState } from '../review-session'
 
 export interface TaskState extends ReviewSessionState {
   cancelled: boolean

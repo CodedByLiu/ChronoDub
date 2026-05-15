@@ -1,4 +1,4 @@
-import type { MicrosecondTimestamp, Segment } from '../../types'
+import type { MicrosecondTimestamp, Segment } from '../../../types'
 import { HIGH_RISK_WINDOW_US, MEDIUM_RISK_WINDOW_US, TECH_TOKEN_RE } from './audio-constants'
 
 export type SegmentRisk = 'low' | 'medium' | 'high'

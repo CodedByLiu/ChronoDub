@@ -1,6 +1,6 @@
-import type { MicrosecondTimestamp } from '../../types'
-import { synthesizeDetailed, type TtsBoundary } from './edge-tts'
-import { decodeMp3ToPcm, measurePcmDurationUs, trimSilenceDetailed, writePcmToWav } from './ffmpeg'
+import type { MicrosecondTimestamp } from '../../../types'
+import { synthesizeDetailed, type TtsBoundary } from '../edge-tts'
+import { decodeMp3ToPcm, measurePcmDurationUs, trimSilenceDetailed, writePcmToWav } from '../ffmpeg'
 import { FADE_SAMPLES, SR } from './audio-constants'
 
 export interface AudioBoundary {

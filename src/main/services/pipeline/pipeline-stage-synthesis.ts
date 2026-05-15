@@ -1,7 +1,11 @@
-import type { AppConfig, Cue } from '../../types'
-import type { ProcessedAudio } from './audio-processing'
-import { TRANSLATION_STRATEGY_VERSION } from './translator'
-import { synthesizeWithFallback, type AssemblerSegment, type SegmentRisk } from './audio-processor'
+import type { AppConfig, Cue } from '../../../types'
+import {
+  synthesizeWithFallback,
+  type AssemblerSegment,
+  type ProcessedAudio,
+  type SegmentRisk,
+} from '../audio'
+import { TRANSLATION_STRATEGY_VERSION } from '../translator'
 import { checkCancelled, checkPaused } from './pipeline-control'
 import { reportProgress, withTimeout } from './pipeline-progress'
 import { shouldApplySpokenTextRewrite } from './pipeline-review'
@@ -11,13 +15,13 @@ import {
   loadCachedSegment,
   resolveCacheDir,
   saveCachedSegment,
-} from './segment-cache'
-import { retimeSegmentCues } from './subtitle-timing'
+} from '../segment-cache'
 import {
   hasSpeakableContent,
   joinCueTextsForSpeech,
+  retimeSegmentCues,
   splitSegmentTextAcrossCues,
-} from './subtitle-text-utils'
+} from '../subtitle'
 import type { SynthesisStageResult, TranslationStageResult } from './pipeline-stage-types'
 
 const EMPTY_AUDIO_ERROR_RE = /TTS (?:生成空音频文件|未生成音频文件)/
