@@ -14,7 +14,7 @@ import { compressTranslation } from './llm'
 const BATCH_SIZE = 15
 const MAX_RETRIES = 3
 const SINGLE_ITEM_RETRIES = 2
-export const TRANSLATION_STRATEGY_VERSION = '2026-05-11-v8'
+export const TRANSLATION_STRATEGY_VERSION = '2026-05-16-v9'
 
 interface TranslationResult {
   translations: Array<{ id: number; text: string }>
@@ -61,6 +61,11 @@ function buildTranslateSystemPrompt(
     'Translate each line into natural and accurate spoken-style Chinese.',
     'Do not over-compress: for full English sentences, return full Chinese sentences.',
     'Keep discourse connectors and logic words when present (for example: so, then, but, therefore).',
+    'Spoken-style expansion (apply within max_chars, never exceed it):',
+    '- When the source is short or terse, prefer a fuller spoken-Mandarin rendering over a clipped one: restore omitted subjects ("do this" -> "我们这样操作"), add natural connectives ("then" -> "接下来" / "那么我们", "so" -> "也就是说"), use complete phrases ("click save" -> "点击保存按钮").',
+    '- Insert Chinese commas (，) at clause boundaries so the TTS pauses naturally; avoid running a long segment as one unbroken clause.',
+    '- For multiple discrete steps or independent statements, separate them with a Chinese period (。) instead of a comma — periods let the TTS pause longer and let the subtitle renderer split each step onto its own line.',
+    '- Never pad with empty filler ("呃...", repeated "然后然后", redundant rephrasing of the same idea). Naturalness comes first; being a bit longer is a soft preference, not a goal.',
     dictLines ? `Terminology glossary:\n${dictLines}` : '',
     'Requirements:',
     '1. Preserve meaning, logic relation, technical terms, and procedural steps.',
