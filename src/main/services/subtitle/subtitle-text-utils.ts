@@ -139,17 +139,20 @@ function softSplitLongSentence(
     punctIndices.push(m.index + 1)
   }
 
-  if (punctIndices.length > 0) {
+  const interiorCuts = punctIndices.filter((idx) => idx > 0 && idx < sentence.length)
+  if (interiorCuts.length > 0) {
     const mid = Math.floor(sentence.length / 2)
-    const cutAt = punctIndices.reduce((best, idx) =>
+    const cutAt = interiorCuts.reduce((best, idx) =>
       Math.abs(idx - mid) < Math.abs(best - mid) ? idx : best
     )
     const left = sentence.slice(0, cutAt).trim()
     const right = sentence.slice(cutAt).trim()
-    const pieces: string[] = []
-    pieces.push(...softSplitLongSentence(left, maxChars, softTarget))
-    pieces.push(...softSplitLongSentence(right, maxChars, softTarget))
-    return pieces
+    if (left.length > 0 && right.length > 0 && left.length < sentence.length && right.length < sentence.length) {
+      const pieces: string[] = []
+      pieces.push(...softSplitLongSentence(left, maxChars, softTarget))
+      pieces.push(...softSplitLongSentence(right, maxChars, softTarget))
+      return pieces
+    }
   }
 
   const pieces: string[] = []
