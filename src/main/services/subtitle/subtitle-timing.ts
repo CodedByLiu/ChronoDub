@@ -52,6 +52,8 @@ function countTimingChars(text: string, keepWeakChars = true): number {
 function buildTimedCharStream(boundaries: AudioBoundary[]): BoundaryTextStream {
   const exactChars: StreamChar[] = []
   const reducedChars: ReducedStreamChar[] = []
+  let exactText = ''
+  let reducedText = ''
 
   for (const boundary of boundaries) {
     for (const ch of Array.from(boundary.part)) {
@@ -61,31 +63,28 @@ function buildTimedCharStream(boundaries: AudioBoundary[]): BoundaryTextStream {
       if (normalizedChars.length === 0) continue
 
       for (const norm of normalizedChars) {
-        const exactIndex = exactChars.length
         const exactEntry: StreamChar = {
           norm,
           startUs: boundary.startUs,
           endUs: boundary.endUs,
-          exactIndex,
+          exactIndex: exactChars.length,
         }
-        exactChars.push(exactEntry)
+        for (let i = 0; i < norm.length; i++) exactChars.push(exactEntry)
+        exactText += norm
 
         if (!isWeakMatchChar(norm)) {
-          reducedChars.push({
+          const reducedEntry: ReducedStreamChar = {
             ...exactEntry,
             reducedIndex: reducedChars.length,
-          })
+          }
+          for (let i = 0; i < norm.length; i++) reducedChars.push(reducedEntry)
+          reducedText += norm
         }
       }
     }
   }
 
-  return {
-    exactChars,
-    reducedChars,
-    exactText: exactChars.map((item) => item.norm).join(''),
-    reducedText: reducedChars.map((item) => item.norm).join(''),
-  }
+  return { exactChars, reducedChars, exactText, reducedText }
 }
 
 function normalizeTextForMatch(text: string, keepWeakChars: boolean): string {
@@ -122,10 +121,12 @@ function findCueMatchRange(
     if (exactMatchIndex >= 0) {
       const start = stream.exactChars[exactMatchIndex]
       const end = stream.exactChars[exactMatchIndex + exactNeedle.length - 1]
-      return {
-        startUs: start.startUs,
-        endUs: end.endUs,
-        nextExactCursor: end.exactIndex + 1,
+      if (start && end) {
+        return {
+          startUs: start.startUs,
+          endUs: end.endUs,
+          nextExactCursor: exactMatchIndex + exactNeedle.length,
+        }
       }
     }
   }
@@ -139,10 +140,11 @@ function findCueMatchRange(
 
   const start = stream.reducedChars[reducedMatchIndex]
   const end = stream.reducedChars[reducedMatchIndex + reducedNeedle.length - 1]
+  if (!start || !end) return null
   return {
     startUs: start.startUs,
     endUs: end.endUs,
-    nextExactCursor: end.exactIndex + 1,
+    nextExactCursor: end.exactIndex + end.norm.length,
   }
 }
 
