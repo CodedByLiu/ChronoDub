@@ -5,6 +5,8 @@ import type { Cue } from '../../../types'
 
 const MS_TO_US = 1000
 
+const RE_TIMESTAMP = /^((?:\d{1,}:)?\d{1,2}:\d{1,2}[,.]\d{1,3}) --> ((?:\d{1,}:)?\d{1,2}:\d{1,2}[,.]\d{1,3})(?: (.*))?$/
+
 export function parseSubtitleFile(filePath: string): Cue[] {
   const ext = extname(filePath).toLowerCase()
   const content = readFileSync(filePath, 'utf-8')
@@ -18,8 +20,33 @@ export function parseSubtitleContent(content: string, ext: string): Cue[] {
   return parseSrtVtt(content)
 }
 
+// The `subtitle` package only recognizes numeric cue identifiers; WebVTT allows
+// alphanumeric ones like "cue-1". Drop those lines so the underlying parser
+// treats the following timestamp line as the start of the cue.
+function stripNonNumericCueIds(content: string): string {
+  const lines = content.split(/\r?\n/)
+  const out: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const next = lines[i + 1] ?? ''
+    const trimmed = line.trim()
+    if (
+      trimmed &&
+      !RE_TIMESTAMP.test(line) &&
+      !/^\d+$/.test(trimmed) &&
+      !/^WEBVTT/.test(line) &&
+      !/^NOTE\b/.test(line) &&
+      RE_TIMESTAMP.test(next)
+    ) {
+      continue
+    }
+    out.push(line)
+  }
+  return out.join('\n')
+}
+
 function parseSrtVtt(content: string): Cue[] {
-  const nodes = parseSync(content)
+  const nodes = parseSync(stripNonNumericCueIds(content))
   const cues: Cue[] = []
   let id = 0
 
