@@ -1,5 +1,10 @@
 import type { Cue, MicrosecondTimestamp, Segment } from '../../../types'
-import { SUBTITLE_MAX_CHARS_PER_CUE, SUBTITLE_SOFT_SPLIT_TARGET } from '../audio'
+import {
+  SUBTITLE_MAX_CHARS_PER_CUE,
+  SUBTITLE_MIN_CHARS_PER_CUE,
+  SUBTITLE_MIN_DURATION_US,
+  SUBTITLE_SOFT_SPLIT_TARGET,
+} from '../audio'
 
 const ASCII_WORD_CHAR_RE = /[A-Za-z0-9_./#+-]/
 const PREFERRED_SPLIT_AFTER_RE = /[\s,.;:!?\uFF0C\u3002\uFF1B\uFF1A\uFF01\uFF1F\u3001\uFF09)\]}]/
@@ -90,11 +95,54 @@ export function hasSpeakableContent(text: string): boolean {
 
 const SENTENCE_TERMINATOR_RE = /([。！？!?…]+)/g
 const SOFT_SPLIT_PUNCT_RE = /[，、；：,;:]/g
+const STRONG_TERMINATOR_TAIL_RE = /[。！？!?…]+$/u
+const SOFT_PUNCT_TAIL_RE = /[，、；：,;:]$/u
+
+function joinShortPiece(prev: string, next: string): string {
+  if (!prev) return next
+  if (!next) return prev
+  const trimmed = prev.replace(STRONG_TERMINATOR_TAIL_RE, '').trimEnd()
+  if (!trimmed) return next
+  if (SOFT_PUNCT_TAIL_RE.test(trimmed)) return `${trimmed}${next}`
+  return `${trimmed}，${next}`
+}
+
+function mergeShortSentences(sentences: string[], minChars: number): string[] {
+  if (sentences.length <= 1) return sentences
+
+  const result: string[] = []
+  let pending: string | null = null
+
+  for (const s of sentences) {
+    if (pending !== null) {
+      pending = joinShortPiece(pending, s)
+      if (pending.length >= minChars) {
+        result.push(pending)
+        pending = null
+      }
+    } else if (s.length < minChars) {
+      pending = s
+    } else {
+      result.push(s)
+    }
+  }
+
+  if (pending !== null) {
+    if (result.length > 0) {
+      result[result.length - 1] = joinShortPiece(result[result.length - 1], pending)
+    } else {
+      result.push(pending)
+    }
+  }
+
+  return result
+}
 
 export function partitionChineseBySentence(
   text: string,
   maxChars: number = SUBTITLE_MAX_CHARS_PER_CUE,
-  softTarget: number = SUBTITLE_SOFT_SPLIT_TARGET
+  softTarget: number = SUBTITLE_SOFT_SPLIT_TARGET,
+  minChars: number = SUBTITLE_MIN_CHARS_PER_CUE
 ): string[] {
   const normalized = text.replace(/\s+/g, ' ').trim()
   if (!normalized) return []
@@ -114,12 +162,14 @@ export function partitionChineseBySentence(
     if (tail) sentences.push(tail)
   }
 
+  const merged = mergeShortSentences(sentences, minChars)
+
   const result: string[] = []
-  for (const sentence of sentences) {
+  for (const sentence of merged) {
     if (sentence.length <= maxChars) {
       result.push(sentence)
     } else {
-      result.push(...softSplitLongSentence(sentence, maxChars, softTarget))
+      result.push(...softSplitLongSentence(sentence, maxChars, softTarget, minChars))
     }
   }
   return result
@@ -128,7 +178,8 @@ export function partitionChineseBySentence(
 function softSplitLongSentence(
   sentence: string,
   maxChars: number,
-  softTarget: number
+  softTarget: number,
+  minChars: number
 ): string[] {
   if (sentence.length <= maxChars) return [sentence]
 
@@ -139,27 +190,60 @@ function softSplitLongSentence(
     punctIndices.push(m.index + 1)
   }
 
-  const interiorCuts = punctIndices.filter((idx) => idx > 0 && idx < sentence.length)
-  if (interiorCuts.length > 0) {
+  const validCuts = punctIndices.filter(
+    (idx) => idx >= minChars && sentence.length - idx >= minChars
+  )
+  if (validCuts.length > 0) {
     const mid = Math.floor(sentence.length / 2)
-    const cutAt = interiorCuts.reduce((best, idx) =>
+    const cutAt = validCuts.reduce((best, idx) =>
       Math.abs(idx - mid) < Math.abs(best - mid) ? idx : best
     )
     const left = sentence.slice(0, cutAt).trim()
     const right = sentence.slice(cutAt).trim()
-    if (left.length > 0 && right.length > 0 && left.length < sentence.length && right.length < sentence.length) {
-      const pieces: string[] = []
-      pieces.push(...softSplitLongSentence(left, maxChars, softTarget))
-      pieces.push(...softSplitLongSentence(right, maxChars, softTarget))
-      return pieces
+    if (
+      left.length >= minChars &&
+      right.length >= minChars &&
+      left.length < sentence.length &&
+      right.length < sentence.length
+    ) {
+      return [
+        ...softSplitLongSentence(left, maxChars, softTarget, minChars),
+        ...softSplitLongSentence(right, maxChars, softTarget, minChars),
+      ]
     }
   }
 
-  const pieces: string[] = []
-  for (let i = 0; i < sentence.length; i += softTarget) {
-    pieces.push(sentence.slice(i, i + softTarget))
+  return [sentence]
+}
+
+export function balancePartsByMinDuration(
+  parts: string[],
+  startUs: number,
+  endUs: number,
+  minDurationUs: number = SUBTITLE_MIN_DURATION_US
+): string[] {
+  if (parts.length <= 1) return parts
+  const totalDuration = Math.max(0, endUs - startUs)
+  if (totalDuration <= 0) return parts
+
+  const maxParts = Math.max(1, Math.floor(totalDuration / minDurationUs))
+  if (parts.length <= maxParts) return parts
+
+  const merged: string[] = [...parts]
+  while (merged.length > maxParts) {
+    let shortestIdx = 0
+    for (let i = 1; i < merged.length; i++) {
+      if (merged[i].length < merged[shortestIdx].length) shortestIdx = i
+    }
+    if (shortestIdx < merged.length - 1) {
+      merged[shortestIdx + 1] = joinShortPiece(merged[shortestIdx], merged[shortestIdx + 1])
+      merged.splice(shortestIdx, 1)
+    } else {
+      merged[shortestIdx - 1] = joinShortPiece(merged[shortestIdx - 1], merged[shortestIdx])
+      merged.splice(shortestIdx, 1)
+    }
   }
-  return pieces
+  return merged
 }
 
 export function allocateProportionalTimings(
@@ -193,7 +277,8 @@ export function allocateProportionalTimings(
 export function repartitionCuesPerSegment(
   finalizedCues: Cue[],
   segments: Segment[],
-  startIdHint?: number
+  startIdHint?: number,
+  precomputedSplits?: Map<number, string[]>
 ): Cue[] {
   if (finalizedCues.length === 0 || segments.length === 0) return finalizedCues
 
@@ -213,9 +298,12 @@ export function repartitionCuesPerSegment(
     const segStart = segCues[0].startUs
     const segEnd = segCues[segCues.length - 1].endUs
     const joined = joinCueTextsForSpeech(segCues.map((c) => c.text))
-    const parts = partitionChineseBySentence(joined)
+    const precomputed = precomputedSplits?.get(segment.id)
+    const rawParts =
+      precomputed && precomputed.length > 0 ? precomputed : partitionChineseBySentence(joined)
 
-    if (parts.length === 0) continue
+    if (rawParts.length === 0) continue
+    const parts = balancePartsByMinDuration(rawParts, segStart, segEnd)
     const timings = allocateProportionalTimings(parts, segStart, segEnd)
     for (let i = 0; i < parts.length; i++) {
       output.push({

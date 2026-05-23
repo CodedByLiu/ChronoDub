@@ -250,6 +250,7 @@ export function ConfigPanel() {
             autoReviewCountdown={config.autoReviewCountdown}
             createVideoSubfolder={config.createVideoSubfolder}
             useLLMSentenceGrouping={config.useLLMSentenceGrouping}
+            useLLMChineseSegmentation={config.useLLMChineseSegmentation}
             hasLLMKey={config.llm.apiKey.trim().length > 0}
             onChangeConcurrent={(value) => setConfig({ maxConcurrentTasks: value as ConcurrencyOption })}
             onChangeReviewMode={(value) => setConfig({ reviewMode: value as ReviewMode })}
@@ -260,6 +261,7 @@ export function ConfigPanel() {
             }
             onChangeCreateVideoSubfolder={(value) => setConfig({ createVideoSubfolder: value })}
             onChangeUseLLMSentenceGrouping={(value) => setConfig({ useLLMSentenceGrouping: value })}
+            onChangeUseLLMChineseSegmentation={(value) => setConfig({ useLLMChineseSegmentation: value })}
           />
         </div>
       </ScrollArea>

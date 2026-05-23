@@ -3,6 +3,7 @@ import {
   computeSegmentTranslationBudget,
   joinCueTextsForSpeech,
   parseSubtitleFile,
+  splitOverlongCuesByPunctuation,
   splitSegmentTextAcrossCues,
 } from '../subtitle'
 import {
@@ -103,18 +104,20 @@ function buildBudgetMaps(
 export async function runTranslationStage(context: PipelineStageContext): Promise<TranslationStageResult> {
   const { taskId, videoPath, subtitlePath, config } = context
 
-  reportProgress(taskId, 'parsing', 5)
-  const englishCues = parseSubtitleFile(subtitlePath)
-  if (englishCues.length === 0) throw new Error('字幕文件为空或解析失败')
+  reportProgress(taskId, 'parsing', 5, '正在解析字幕文件')
+  const parsedCues = parseSubtitleFile(subtitlePath)
+  if (parsedCues.length === 0) throw new Error('字幕文件为空或解析失败')
+  reportProgress(taskId, 'parsing', 7, '正在预拆分超长字幕段落')
+  const englishCues = splitOverlongCuesByPunctuation(parsedCues)
   checkCancelled(taskId)
   await checkPaused(taskId)
   checkCancelled(taskId)
 
-  reportProgress(taskId, 'parsing', 10)
   const cacheDir = resolveCacheDir(config.outputDir, videoPath)
   let groupingSignature: string | undefined
   let segments: Segment[]
   if (config.useLLMSentenceGrouping && config.llm.apiKey.trim().length > 0) {
+    reportProgress(taskId, 'parsing', 10, '正在调用 LLM 智能分句')
     groupingSignature = computeGroupingSignature(englishCues)
     const cachedGroups = cacheDir
       ? loadSentenceGroupCache(cacheDir, taskId, groupingSignature)
@@ -136,6 +139,7 @@ export async function runTranslationStage(context: PipelineStageContext): Promis
       }
     }
   } else {
+    reportProgress(taskId, 'parsing', 10, '正在按启发式规则分句')
     segments = buildSegments(englishCues)
   }
   checkCancelled(taskId)
@@ -150,7 +154,7 @@ export async function runTranslationStage(context: PipelineStageContext): Promis
   await checkPaused(taskId)
   checkCancelled(taskId)
 
-  reportProgress(taskId, 'parsing', 15)
+  reportProgress(taskId, 'parsing', 15, '正在校准朗读速度')
   const cps = await calibrateCPS(config.selectedVoice)
   checkCancelled(taskId)
   await checkPaused(taskId)
@@ -159,7 +163,7 @@ export async function runTranslationStage(context: PipelineStageContext): Promis
   assignBudgets(windows, cps)
   const { segmentRiskMap, segmentBudgetMap } = buildBudgetMaps(segments, windows)
 
-  reportProgress(taskId, 'translating', 20)
+  reportProgress(taskId, 'translating', 20, '正在翻译字幕到中文')
   const translationConfigSignature = buildTranslationConfigSignature(config, groupingSignature)
   const translations = getTaskSegmentTranslations(taskId, translationConfigSignature)
   const pendingSegments = segments.filter((segment) => {
@@ -218,7 +222,7 @@ export async function runTranslationStage(context: PipelineStageContext): Promis
   checkCancelled(taskId)
 
   const chineseCues = mapTranslatedCues(englishCues, segments, translations, config)
-  reportProgress(taskId, 'translating', 45)
+  reportProgress(taskId, 'translating', 45, '翻译完成，准备进入审校')
 
   await checkPaused(taskId)
   checkCancelled(taskId)

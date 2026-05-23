@@ -13,12 +13,14 @@ interface RuntimeSectionsProps {
   autoReviewCountdown: number
   createVideoSubfolder: boolean
   useLLMSentenceGrouping: boolean
+  useLLMChineseSegmentation: boolean
   hasLLMKey: boolean
   onChangeConcurrent: (value: ConcurrencyOption) => void
   onChangeReviewMode: (value: ReviewMode) => void
   onChangeAutoReviewCountdown: (value: number) => void
   onChangeCreateVideoSubfolder: (value: boolean) => void
   onChangeUseLLMSentenceGrouping: (value: boolean) => void
+  onChangeUseLLMChineseSegmentation: (value: boolean) => void
 }
 
 export function RuntimeSections({
@@ -27,12 +29,14 @@ export function RuntimeSections({
   autoReviewCountdown,
   createVideoSubfolder,
   useLLMSentenceGrouping,
+  useLLMChineseSegmentation,
   hasLLMKey,
   onChangeConcurrent,
   onChangeReviewMode,
   onChangeAutoReviewCountdown,
   onChangeCreateVideoSubfolder,
   onChangeUseLLMSentenceGrouping,
+  onChangeUseLLMChineseSegmentation,
 }: RuntimeSectionsProps) {
   return (
     <>
@@ -128,6 +132,28 @@ export function RuntimeSections({
             <p className="text-xs text-muted-foreground">
               {hasLLMKey
                 ? '翻译前先用 LLM 判断哪些相邻字幕属于同一句话再合并，可消除中文配音的句中停顿。每个视频会多几次 API 调用（结果会缓存）。'
+                : '需先在上方配置 LLM 服务才能启用。'}
+            </p>
+          </div>
+        </label>
+
+        <label
+          className={`flex items-start gap-3 rounded-md border border-border bg-background/40 px-3 py-2 ${
+            hasLLMKey ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+          }`}
+        >
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+            checked={useLLMChineseSegmentation && hasLLMKey}
+            disabled={!hasLLMKey}
+            onChange={(event) => onChangeUseLLMChineseSegmentation(event.target.checked)}
+          />
+          <div className="space-y-1">
+            <div className="text-sm">使用 LLM 优化中文字幕换行（实验性）</div>
+            <p className="text-xs text-muted-foreground">
+              {hasLLMKey
+                ? '翻译后再用 LLM 重新划分中文字幕的换行位置，让每行字幕长度更均衡、停顿更自然。失败时会自动回退到启发式分句。会增加少量 API 调用。'
                 : '需先在上方配置 LLM 服务才能启用。'}
             </p>
           </div>

@@ -99,6 +99,7 @@ export interface AppConfig {
   autoReviewCountdown: number
   maxConcurrentTasks: ConcurrencyOption
   useLLMSentenceGrouping: boolean
+  useLLMChineseSegmentation: boolean
 }
 
 export interface SentenceGroup {
@@ -140,6 +141,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   autoReviewCountdown: 30,
   maxConcurrentTasks: 2,
   useLLMSentenceGrouping: true,
+  useLLMChineseSegmentation: false,
 }
 
 export const TASK_STATUS_META: Record<TaskStatus, { label: string; color: string }> = {

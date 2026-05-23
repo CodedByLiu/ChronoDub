@@ -52,14 +52,22 @@ test('partitionChineseBySentence: long sentence with comma soft-splits at comma'
   assert.ok(parts[0].endsWith('，') || parts[0].endsWith('。'))
 })
 
-test('partitionChineseBySentence: long sentence no punctuation, hard split', () => {
+test('partitionChineseBySentence: long sentence no punctuation stays whole', () => {
+  // No hard split: long unpunctuated text remains a single cue, soft-wrap handles display
   const text = '甲'.repeat(50)
   const parts = partitionChineseBySentence(text, 40, 30)
-  assert.ok(parts.length >= 2)
-  for (const p of parts) {
-    assert.ok(p.length <= 30, `each chunk should be ≤30 chars, got ${p.length}`)
-  }
-  assert.equal(parts.join(''), text)
+  assert.equal(parts.length, 1)
+  assert.equal(parts[0], text)
+})
+
+test('partitionChineseBySentence: merges short orphan sentence with neighbor', () => {
+  // Regression for "我，电子": LLM-translated cues sometimes produce ultra-short standalone sentences
+  const parts = partitionChineseBySentence('我。电子。是用来计算电流的。')
+  assert.ok(parts.length <= 2, `should not produce three tiny lines, got ${JSON.stringify(parts)}`)
+  assert.ok(
+    parts.every((p) => p.length >= 6 || parts.length === 1),
+    `every part should be >=6 chars or be the only part, got ${JSON.stringify(parts)}`
+  )
 })
 
 test('allocateProportionalTimings: distributes proportionally', () => {

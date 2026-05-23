@@ -124,6 +124,63 @@ interface SentenceGroupCacheFile {
   groups: Array<{ cueIds: number[] }>
 }
 
+interface ChineseSplitCacheFile {
+  version: number
+  schemaVersion: string
+  entries: Array<{ key: string; lines: string[] }>
+}
+
+export function hashChineseSplitKey(text: string, durationMs: number): string {
+  return createHash('sha256')
+    .update(text, 'utf-8')
+    .update('\0')
+    .update(String(durationMs))
+    .digest('hex')
+    .slice(0, 16)
+}
+
+export function loadChineseSplitCache(
+  cacheDir: string,
+  taskId: string,
+  schemaVersion: string
+): Map<string, string[]> {
+  if (!existsSync(cacheDir) || !manifestMatchesTask(cacheDir, taskId)) return new Map()
+
+  const file = safeReadJson<ChineseSplitCacheFile>(join(cacheDir, 'chinese-splits.json'))
+  if (!file || file.version !== SEGMENT_CACHE_VERSION) return new Map()
+  if (file.schemaVersion !== schemaVersion) return new Map()
+  if (!Array.isArray(file.entries)) return new Map()
+
+  const map = new Map<string, string[]>()
+  for (const entry of file.entries) {
+    if (!entry || typeof entry !== 'object') continue
+    if (typeof entry.key !== 'string' || !entry.key) continue
+    if (!Array.isArray(entry.lines)) continue
+    const lines: string[] = []
+    for (const line of entry.lines) {
+      if (typeof line === 'string' && line.length > 0) lines.push(line)
+    }
+    if (lines.length > 0) map.set(entry.key, lines)
+  }
+  return map
+}
+
+export function saveChineseSplitCache(
+  cacheDir: string,
+  taskId: string,
+  schemaVersion: string,
+  entries: Map<string, string[]>
+): void {
+  ensureCacheDir(cacheDir)
+  writeCacheManifest(cacheDir, taskId)
+  const file: ChineseSplitCacheFile = {
+    version: SEGMENT_CACHE_VERSION,
+    schemaVersion,
+    entries: Array.from(entries.entries()).map(([key, lines]) => ({ key, lines: [...lines] })),
+  }
+  safeWriteJson(join(cacheDir, 'chinese-splits.json'), file)
+}
+
 export function loadSentenceGroupCache(
   cacheDir: string,
   taskId: string,

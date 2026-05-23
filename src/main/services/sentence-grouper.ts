@@ -36,14 +36,23 @@ interface LLMResponse {
 
 const SYSTEM_PROMPT = `You are a sentence boundary detector for English subtitles that will be translated into Chinese and dubbed by a TTS engine. Subtitle cues are often split mid-sentence by the captioner; your job is to GROUP consecutive cue ids that belong to the SAME spoken sentence, so the TTS reads them as one continuous utterance.
 
+Each input cue carries these fields:
+- id: integer cue identifier
+- text: the cue text
+- gap_ms: silence between this cue and the previous one (0 for the first cue in the chunk)
+- dur_ms: duration of this cue
+- ends_strong: true if cue ends with . ? ! 。 ！ ？
+- ends_soft: true if cue ends with , ; : , ; : — – (mid-sentence punctuation)
+- starts_lower: true if cue starts with a lowercase letter (strong signal of mid-sentence continuation)
+
 Rules:
 1. Group consecutive cues only. Never reorder. Every input id MUST appear in exactly one group, in original order.
-2. A group ends when the speaker has completed a thought: declarative period, question, exclamation, OR a clear topic shift between adjacent cues.
-3. Do NOT be misled by trailing commas / dashes / lowercase starts — those usually signal mid-sentence and SHOULD be merged regardless of gap_ms.
-4. Even if gap_ms is large (1500-3000ms), if the previous cue ends with a comma or conjunction and the next starts lowercase / with "and / but / so / because / which / that", MERGE.
-5. If the previous cue ends with "." "?" "!" and the next starts with a capital noun/pronoun beginning a new topic, SPLIT.
-6. A single group's total span (last.end - first.start) SHOULD NOT exceed 7000ms. If a sentence is longer, split at the most natural sub-boundary.
-7. Output strict JSON: {"groups":[[1,2,3],[4],[5,6]]}. No prose.`
+2. A group ends when the speaker has completed a thought: a cue with ends_strong=true AND the next cue starts a new topic / capital subject.
+3. STRONGLY MERGE when the previous cue has ends_soft=true OR the next cue has starts_lower=true OR the next cue begins with "and / but / so / because / which / that / or / nor / yet". This applies even if gap_ms is large (1500-3000ms).
+4. Only SPLIT when previous cue has ends_strong=true AND next cue clearly begins a new topic (capital noun/pronoun, no continuation conjunction).
+5. AVOID singleton groups (a single short cue) unless that cue is itself a complete sentence ending with ends_strong=true and the speaker is genuinely shifting topic. Prefer groups that span at least 1500ms or contain a complete clause.
+6. A single group's total span (last cue end - first cue start) SHOULD NOT exceed 7000ms. If a sentence is genuinely longer, split at the most natural sub-boundary.
+7. Output strict JSON: {"groups":[[1,2,3],[4],[5,6]]}. No prose, no markdown fences.`
 
 export function computeGroupingSignature(cues: Cue[]): string {
   const hash = createHash('sha256')
@@ -72,11 +81,28 @@ function buildChunks(cues: Cue[]): Cue[][] {
   return chunks
 }
 
+const STRONG_END_RE = /[.?!。！？]+["')\]]*\s*$/u
+const SOFT_END_RE = /[,;:，；：\-–—]+["')\]]*\s*$/u
+const STARTS_LOWERCASE_RE = /^["'([]*[a-z]/
+
 function buildUserPayload(chunk: Cue[]): string {
   const items = chunk.map((cue, idx) => {
     const prev = chunk[idx - 1]
     const gapMs = prev ? Math.max(0, Math.round((cue.startUs - prev.endUs) / 1000)) : 0
-    return { id: cue.id, text: cue.text, gap_ms: gapMs }
+    const durMs = Math.max(0, Math.round((cue.endUs - cue.startUs) / 1000))
+    const trimmed = cue.text.trim()
+    const endsStrong = STRONG_END_RE.test(trimmed)
+    const endsSoft = !endsStrong && SOFT_END_RE.test(trimmed)
+    const startsLower = STARTS_LOWERCASE_RE.test(trimmed)
+    return {
+      id: cue.id,
+      text: cue.text,
+      gap_ms: gapMs,
+      dur_ms: durMs,
+      ends_strong: endsStrong,
+      ends_soft: endsSoft,
+      starts_lower: startsLower,
+    }
   })
   return JSON.stringify({ cues: items })
 }
@@ -137,41 +163,50 @@ function mergeOverlappingChunks(
   if (chunkResults.length === 0) return { groups: [], usedFallback: false }
 
   let usedFallback = false
-  const fallbackGroups = groupCuesByGap(allCues)
-  const fallbackBoundaries = new Set<number>()
-  for (const g of fallbackGroups) {
-    if (g.cueIds.length > 0) fallbackBoundaries.add(g.cueIds[g.cueIds.length - 1])
-  }
-
   const cueOrder = allCues.map((c) => c.id)
   const cueIndex = new Map(cueOrder.map((id, idx) => [id, idx]))
 
-  const boundaries = new Set<number>()
-  boundaries.add(cueOrder[cueOrder.length - 1])
+  // Vote tally: for each cueId, count how many chunks saw it, and how many of those flagged it
+  // as a group boundary (i.e. the last cue in a group). A cue becomes a boundary only when
+  // every chunk that saw it agrees — this prevents stray mid-sentence splits in overlap regions.
+  const seenCount = new Map<number, number>()
+  const boundaryVotes = new Map<number, number>()
 
   for (let ci = 0; ci < chunkResults.length; ci++) {
     const { chunkCueIds, groups: chunkGroups } = chunkResults[ci]
-    const chunkSet = new Set(chunkCueIds)
-    const isLastChunk = ci === chunkResults.length - 1
+    const groups =
+      chunkGroups ??
+      (() => {
+        usedFallback = true
+        const slice = chunkCueIds.map((id) => allCues[cueIndex.get(id)!])
+        return groupCuesByGap(slice)
+      })()
 
-    const groups = chunkGroups ?? (() => {
-      usedFallback = true
-      const slice = chunkCueIds.map((id) => allCues[cueIndex.get(id)!])
-      return groupCuesByGap(slice)
-    })()
-
-    const overlapStart = !isLastChunk
-      ? chunkCueIds.length - SENTENCE_GROUP_OVERLAP
-      : chunkCueIds.length
+    const chunkBoundaries = new Set<number>()
     for (const g of groups) {
       if (g.cueIds.length === 0) continue
       const lastId = g.cueIds[g.cueIds.length - 1]
-      const lastPosInChunk = chunkCueIds.indexOf(lastId)
-      if (lastPosInChunk < 0 || !chunkSet.has(lastId)) continue
-      if (lastPosInChunk >= overlapStart) continue
-      boundaries.add(lastId)
+      chunkBoundaries.add(lastId)
+    }
+
+    for (const id of chunkCueIds) {
+      seenCount.set(id, (seenCount.get(id) ?? 0) + 1)
+      if (chunkBoundaries.has(id)) {
+        boundaryVotes.set(id, (boundaryVotes.get(id) ?? 0) + 1)
+      }
     }
   }
+
+  const boundaries = new Set<number>()
+  for (const id of cueOrder) {
+    const seen = seenCount.get(id) ?? 0
+    const votes = boundaryVotes.get(id) ?? 0
+    if (seen === 0) continue
+    // Unanimous vote required: every chunk that saw this cue flagged it as a boundary.
+    if (votes === seen) boundaries.add(id)
+  }
+  // Final cue is always a boundary, otherwise the trailing group would be dropped.
+  boundaries.add(cueOrder[cueOrder.length - 1])
 
   const groups: SentenceGroup[] = []
   let current: number[] = []
