@@ -17,6 +17,8 @@ Thumbs.db
 .claude/
 *.local
 
+/data/
+
 # Secrets / runtime config — never commit
 .env
 .env.*
